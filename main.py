@@ -1,7 +1,9 @@
+
 import os
 import threading
 from kivy.app import App
 from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.widget import Widget
 from kivy.uix.label import Label
 from kivy.uix.textinput import TextInput
 from kivy.uix.button import Button
@@ -21,11 +23,11 @@ class BtcAlarmApp(App):
         self.android_player = None
         self.pc_sirene = None
 
-        # Layout Principal com espaçamento vertical amplo
+        # Layout Principal focado no topo da tela
         layout = BoxLayout(
             orientation='vertical',
-            padding=[40, 40, 40, 40],
-            spacing=25
+            padding=[30, 20, 30, 20],
+            spacing=15
         )
         
         # Fundo do App Escuro (#12121A)
@@ -37,7 +39,7 @@ class BtcAlarmApp(App):
         # 1. Título
         self.txt_titulo = Label(
             text="Cotação Atual do Bitcoin (USD)", 
-            font_size='16sp', 
+            font_size='15sp', 
             size_hint=(1, None),
             height=30,
             color=get_color_from_hex('#B0B0C0')
@@ -46,37 +48,38 @@ class BtcAlarmApp(App):
         # 2. Preço Principal
         self.txt_preco = Label(
             text="Buscando Mercado...", 
-            font_size='30sp', 
+            font_size='28sp', 
             bold=True, 
             size_hint=(1, None),
-            height=50,
+            height=45,
             color=get_color_from_hex('#00E676')
         )
         
-        # 3. Campo de Entrada com fundo escuro e texto visível
+        # 3. Campo de Entrada com dobro de altura e focado no Teclado Numérico
         self.input_alvo = TextInput(
             hint_text="Definir Valor Alvo (U$)", 
             multiline=False, 
-            input_filter='float', 
-            size_hint=(0.85, None),      # Ocupa 85% da largura da tela
-            pos_hint={'center_x': 0.5},   # Centralizado horizontalmente
-            height=55,
-            font_size='18sp',
+            input_filter='float',
+            input_type='number',         # Solicita teclado numerico ao Android
+            size_hint=(0.9, None),       # Ocupa 90% da largura
+            pos_hint={'center_x': 0.5},   # Centralizado
+            height=80,                   # Dobro da altura anterior
+            font_size='22sp',            # Fonte maior
             halign='center',
-            background_color=get_color_from_hex('#2A2A38'),  # Fundo cinza escuro
-            foreground_color=get_color_from_hex('#FFFFFF'),  # Texto branco ao digitar
-            hint_text_color=get_color_from_hex('#808090'),   # Texto de ajuda em cinza
-            cursor_color=get_color_from_hex('#00E676')       # Cursor verde
+            background_color=get_color_from_hex('#2A2A38'),
+            foreground_color=get_color_from_hex('#FFFFFF'),
+            hint_text_color=get_color_from_hex('#808090'),
+            cursor_color=get_color_from_hex('#00E676')
         )
         
-        # 4. Botão de Ação Reduzido e Centralizado
+        # 4. Botão de Ação Centralizado
         self.btn_acao = Button(
             text="Ativar Alarme", 
             background_normal='',
             background_color=get_color_from_hex('#00A843'), 
-            size_hint=(0.7, None),       # Ocupa 70% da largura da tela
-            pos_hint={'center_x': 0.5},   # Centralizado
-            height=55, 
+            size_hint=(0.8, None),
+            pos_hint={'center_x': 0.5},
+            height=60, 
             bold=True,
             font_size='18sp'
         )
@@ -87,16 +90,19 @@ class BtcAlarmApp(App):
             text="Nenhum alarme programado", 
             font_size='14sp', 
             size_hint=(1, None),
-            height=40,
+            height=35,
             color=get_color_from_hex('#808080')
         )
 
-        # Adiciona os elementos em sequência separada
+        # Adiciona os elementos no topo da interface
         layout.add_widget(self.txt_titulo)
         layout.add_widget(self.txt_preco)
         layout.add_widget(self.input_alvo)
         layout.add_widget(self.btn_acao)
         layout.add_widget(self.txt_status)
+
+        # Espaçador flexível que empurra toda a interface para a metade superior da tela
+        layout.add_widget(Widget())
 
         self.disparar_busca_segundo_plano()
         Clock.schedule_interval(self.disparar_busca_segundo_plano, 4)
