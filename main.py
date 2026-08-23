@@ -18,63 +18,86 @@ class BtcAlarmApp(App):
         self.alarme_tocando = False
         self.preco_atual_global = 0.0
         
-        # Gerenciamento de player no Android
         self.android_player = None
         self.pc_sirene = None
 
-        # Layout Principal
-        layout = BoxLayout(orientation='vertical', padding=30, spacing=20)
+        # Layout Principal com espaçamento vertical amplo
+        layout = BoxLayout(
+            orientation='vertical',
+            padding=[40, 40, 40, 40],
+            spacing=25
+        )
         
-        # Fundo do App em Hexadecimal (#12121A)
+        # Fundo do App Escuro (#12121A)
         with layout.canvas.before:
             Color(*get_color_from_hex('#12121A'))
             self.rect = Rectangle(size=layout.size, pos=layout.pos)
             layout.bind(size=self._update_rect, pos=self._update_rect)
 
-        # Componentes visuais com cores em Hexadecimal
+        # 1. Título
         self.txt_titulo = Label(
-            text="Cotacao Atual do Bitcoin (USD)", 
+            text="Cotação Atual do Bitcoin (USD)", 
             font_size='16sp', 
+            size_hint=(1, None),
+            height=30,
             color=get_color_from_hex('#B0B0C0')
         )
+        
+        # 2. Preço Principal
         self.txt_preco = Label(
             text="Buscando Mercado...", 
-            font_size='32sp', 
+            font_size='30sp', 
             bold=True, 
+            size_hint=(1, None),
+            height=50,
             color=get_color_from_hex('#00E676')
         )
         
+        # 3. Campo de Entrada com fundo escuro e texto visível
         self.input_alvo = TextInput(
             hint_text="Definir Valor Alvo (U$)", 
             multiline=False, 
             input_filter='float', 
-            size_hint_y=None, 
-            height=50,
-            halign='center'
+            size_hint=(0.85, None),      # Ocupa 85% da largura da tela
+            pos_hint={'center_x': 0.5},   # Centralizado horizontalmente
+            height=55,
+            font_size='18sp',
+            halign='center',
+            background_color=get_color_from_hex('#2A2A38'),  # Fundo cinza escuro
+            foreground_color=get_color_from_hex('#FFFFFF'),  # Texto branco ao digitar
+            hint_text_color=get_color_from_hex('#808090'),   # Texto de ajuda em cinza
+            cursor_color=get_color_from_hex('#00E676')       # Cursor verde
         )
         
-        self.txt_status = Label(
-            text="Nenhum alarme programado", 
-            font_size='14sp', 
-            color=get_color_from_hex('#808080')
-        )
-        
+        # 4. Botão de Ação Reduzido e Centralizado
         self.btn_acao = Button(
             text="Ativar Alarme", 
+            background_normal='',
             background_color=get_color_from_hex('#00A843'), 
-            size_hint_y=None, 
-            height=60, 
-            bold=True
+            size_hint=(0.7, None),       # Ocupa 70% da largura da tela
+            pos_hint={'center_x': 0.5},   # Centralizado
+            height=55, 
+            bold=True,
+            font_size='18sp'
         )
         self.btn_acao.bind(on_press=self.alternar_alarme)
 
+        # 5. Status do Alarme
+        self.txt_status = Label(
+            text="Nenhum alarme programado", 
+            font_size='14sp', 
+            size_hint=(1, None),
+            height=40,
+            color=get_color_from_hex('#808080')
+        )
+
+        # Adiciona os elementos em sequência separada
         layout.add_widget(self.txt_titulo)
         layout.add_widget(self.txt_preco)
         layout.add_widget(self.input_alvo)
         layout.add_widget(self.btn_acao)
         layout.add_widget(self.txt_status)
 
-        # Inicializa busca do preco
         self.disparar_busca_segundo_plano()
         Clock.schedule_interval(self.disparar_busca_segundo_plano, 4)
         return layout
