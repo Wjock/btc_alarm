@@ -26,8 +26,8 @@ class BtcAlarmApp(App):
         # Layout Principal focado no topo da tela
         layout = BoxLayout(
             orientation='vertical',
-            padding=[30, 20, 30, 20],
-            spacing=15
+            padding=[30, 25, 30, 20],
+            spacing=25
         )
         
         # Fundo do App Escuro (#12121A)
