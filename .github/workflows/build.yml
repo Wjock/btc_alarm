@@ -1,0 +1,65 @@
+name: Build Kivy APK
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'temurin'
+        java-version: '17'
+
+    - name: Set up Android SDK
+      uses: android-actions/setup-android@v3
+
+    - name: Install System Dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential ccache git libffi-dev libssl-dev gettext zlib1g-dev zip unzip \
+          autoconf automake libtool libtool-bin libltdl-dev pkg-config m4 texinfo
+        python -m pip install --upgrade pip
+        pip install buildozer cython==0.29.36
+
+    - name: Setup Buildozer SDK Paths and Install Target API
+      run: |
+        BUILDOZER_SDK="$HOME/.buildozer/android/platform/android-sdk"
+        mkdir -p "$BUILDOZER_SDK/cmdline-tools"
+        mkdir -p "$BUILDOZER_SDK/licenses"
+        mkdir -p "$BUILDOZER_SDK/tools/bin"
+
+        yes | sdkmanager "platforms;android-34" "build-tools;34.0.0" "platform-tools" || true
+        yes | sdkmanager --licenses || true
+
+        cp -r $ANDROID_SDK_ROOT/licenses/* "$BUILDOZER_SDK/licenses/" 2>/dev/null || true
+        ln -sf $ANDROID_SDK_ROOT/cmdline-tools/latest "$BUILDOZER_SDK/cmdline-tools/latest"
+        ln -sf $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager "$BUILDOZER_SDK/tools/bin/sdkmanager"
+        ln -sf $ANDROID_SDK_ROOT/platform-tools "$BUILDOZER_SDK/platform-tools"
+        ln -sf $ANDROID_SDK_ROOT/platforms "$BUILDOZER_SDK/platforms"
+
+    - name: Build APK
+      env:
+        ACLOCAL_PATH: /usr/share/aclocal
+        ANDROIDSDK: /home/runner/.buildozer/android/platform/android-sdk
+        ANDROID_SDK_ROOT: /home/runner/.buildozer/android/platform/android-sdk
+        ANDROID_HOME: /home/runner/.buildozer/android/platform/android-sdk
+      run: |
+        buildozer -v android debug
+
+    - name: Upload APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: btc_alarm
+        path: bin/*.apk
