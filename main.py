@@ -25,8 +25,8 @@ class BtcAlarmApp(App):
 
         layout = BoxLayout(
             orientation='vertical',
-            padding=[30, 40, 30, 20],
-            spacing=15
+            padding=[30, 80, 30, 20],
+            spacing=25
         )
         
         with layout.canvas.before:
@@ -58,7 +58,7 @@ class BtcAlarmApp(App):
             input_type='number',
             size_hint=(0.9, None),
             pos_hint={'center_x': 0.5},
-            height=70,
+            height=90,
             font_size='20sp',
             halign='center',
             background_color=get_color_from_hex('#2A2A38'),
@@ -103,29 +103,52 @@ class BtcAlarmApp(App):
         self.rect.size = instance.size
 
     def adquirir_wakelock(self):
-        if platform == 'android' and self.wake_lock is None:
+        """Mantém a CPU e a Conexão Wi-Fi/Rede ativas mesmo com a tela apagada"""
+        if platform == 'android':
             try:
                 from jnius import autoclass
                 PythonActivity = autoclass('org.kivy.android.PythonActivity')
                 Context = autoclass('android.content.Context')
                 PowerManager = autoclass('android.os.PowerManager')
+                WifiManager = autoclass('android.net.wifi.WifiManager')
 
                 activity = PythonActivity.mActivity
-                power_manager = activity.getSystemService(Context.POWER_SERVICE)
                 
-                self.wake_lock = power_manager.newWakeLock(1, "BtcAlarm::WakeLockTag")
-                self.wake_lock.acquire()
+                # 1. Mantém a CPU rodando no escuro
+                power_manager = activity.getSystemService(Context.POWER_SERVICE)
+                if self.wake_lock is None:
+                    self.wake_lock = power_manager.newWakeLock(1, "BtcAlarm::WakeLockTag")
+                    self.wake_lock.acquire()
+
+                # 2. Mantém o Wi-Fi ativo mesmo em Doze Mode (Modo de Suspensão)
+                wifi_service = activity.getSystemService(Context.WIFI_SERVICE)
+                if not hasattr(self, 'wifi_lock') or self.wifi_lock is None:
+                    # WIFI_MODE_FULL_HIGH_PERF = 3
+                    self.wifi_lock = wifi_service.createWifiLock(3, "BtcAlarm::WifiLockTag")
+                    self.wifi_lock.acquire()
+
             except Exception as e:
-                print(f"Erro ao adquirir WakeLock: {e}")
+                print(f"Erro ao adquirir Trava de CPU/Rede: {e}")
 
     def soltar_wakelock(self):
-        if platform == 'android' and self.wake_lock is not None:
-            try:
-                if self.wake_lock.isHeld():
-                    self.wake_lock.release()
-                self.wake_lock = None
-            except Exception as e:
-                print(f"Erro ao soltar WakeLock: {e}")
+        """Libera a CPU e a Rede para economizar bateria ao desligar o alarme"""
+        if platform == 'android':
+            if self.wake_lock is not None:
+                try:
+                    if self.wake_lock.isHeld():
+                        self.wake_lock.release()
+                    self.wake_lock = None
+                except Exception:
+                    pass
+
+            if hasattr(self, 'wifi_lock') and self.wifi_lock is not None:
+                try:
+                    if self.wifi_lock.isHeld():
+                        self.wifi_lock.release()
+                    self.wifi_lock = None
+                except Exception:
+                    pass
+
 
     def acender_e_desbloquear_tela(self):
         if platform == 'android':
