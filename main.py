@@ -22,11 +22,13 @@ class BtcAlarmApp(App):
         self.android_player = None
         self.pc_sirene = None
         self.wake_lock = None
+        self.wifi_lock = None
 
+        # Layout ajustado conforme suas preferências
         layout = BoxLayout(
             orientation='vertical',
-            padding=[30, 80, 30, 20],
-            spacing=25
+            padding=[30, 100, 30, 20],
+            spacing=30
         )
         
         with layout.canvas.before:
@@ -59,7 +61,7 @@ class BtcAlarmApp(App):
             size_hint=(0.9, None),
             pos_hint={'center_x': 0.5},
             height=90,
-            font_size='20sp',
+            font_size='22sp',
             halign='center',
             background_color=get_color_from_hex('#2A2A38'),
             foreground_color=get_color_from_hex('#FFFFFF'),
@@ -98,12 +100,40 @@ class BtcAlarmApp(App):
         Clock.schedule_interval(self.disparar_busca_segundo_plano, 4)
         return layout
 
+    def on_pause(self):
+        return True
+
+    def on_resume(self):
+        pass
+
     def _update_rect(self, instance, value):
         self.rect.pos = instance.pos
         self.rect.size = instance.size
 
+    def manter_tela_ligada(self, ligar=True):
+        """Impede a tela de apagar/suspender enquanto o alarme estiver ativo"""
+        if platform == 'android':
+            try:
+                from jnius import autoclass
+                PythonActivity = autoclass('org.kivy.android.PythonActivity')
+                WindowManager = autoclass('android.view.WindowManager$LayoutParams')
+                
+                activity = PythonActivity.mActivity
+                flag = WindowManager.FLAG_KEEP_SCREEN_ON
+                
+                def apply_screen_flag():
+                    if ligar:
+                        activity.getWindow().addFlags(flag)
+                    else:
+                        activity.getWindow().clearFlags(flag)
+
+                from android.runnable import run_on_ui_thread
+                run_on_ui_thread(apply_screen_flag)()
+            except Exception as e:
+                print(f"Erro ao alterar flag de tela: {e}")
+
     def adquirir_wakelock(self):
-        """Mantém a CPU e a Conexão Wi-Fi/Rede ativas mesmo com a tela apagada"""
+        """Mantém a CPU e a Conexão Wi-Fi/Rede ativas"""
         if platform == 'android':
             try:
                 from jnius import autoclass
@@ -114,16 +144,15 @@ class BtcAlarmApp(App):
 
                 activity = PythonActivity.mActivity
                 
-                # 1. Mantém a CPU rodando no escuro
+                # Trava do Processador (CPU)
                 power_manager = activity.getSystemService(Context.POWER_SERVICE)
                 if self.wake_lock is None:
                     self.wake_lock = power_manager.newWakeLock(1, "BtcAlarm::WakeLockTag")
                     self.wake_lock.acquire()
 
-                # 2. Mantém o Wi-Fi ativo mesmo em Doze Mode (Modo de Suspensão)
+                # Trava da Placa Wi-Fi/Rede
                 wifi_service = activity.getSystemService(Context.WIFI_SERVICE)
-                if not hasattr(self, 'wifi_lock') or self.wifi_lock is None:
-                    # WIFI_MODE_FULL_HIGH_PERF = 3
+                if self.wifi_lock is None:
                     self.wifi_lock = wifi_service.createWifiLock(3, "BtcAlarm::WifiLockTag")
                     self.wifi_lock.acquire()
 
@@ -131,7 +160,9 @@ class BtcAlarmApp(App):
                 print(f"Erro ao adquirir Trava de CPU/Rede: {e}")
 
     def soltar_wakelock(self):
-        """Libera a CPU e a Rede para economizar bateria ao desligar o alarme"""
+        """Libera a CPU, a Rede e volta a tela ao comportamento normal"""
+        self.manter_tela_ligada(False)
+
         if platform == 'android':
             if self.wake_lock is not None:
                 try:
@@ -141,7 +172,7 @@ class BtcAlarmApp(App):
                 except Exception:
                     pass
 
-            if hasattr(self, 'wifi_lock') and self.wifi_lock is not None:
+            if self.wifi_lock is not None:
                 try:
                     if self.wifi_lock.isHeld():
                         self.wifi_lock.release()
@@ -149,8 +180,8 @@ class BtcAlarmApp(App):
                 except Exception:
                     pass
 
-
     def acender_e_desbloquear_tela(self):
+        """Força a exibição por cima da tela de bloqueio ao disparar"""
         if platform == 'android':
             try:
                 from jnius import autoclass
@@ -172,7 +203,7 @@ class BtcAlarmApp(App):
                 from android.runnable import run_on_ui_thread
                 run_on_ui_thread(apply_flags)()
             except Exception as e:
-                print(f"Erro ao forçar acendimento da tela: {e}")
+                print(f"Erro ao acender a tela: {e}")
 
     def disparar_busca_segundo_plano(self, dt=None):
         threading.Thread(target=self.buscar_preco_btc, daemon=True).start()
@@ -287,7 +318,9 @@ class BtcAlarmApp(App):
                     self.txt_status.text = f"Alerta ativo {texto_direcao}: U$ {self.preco_alvo:,.2f}"
                     self.txt_status.color = get_color_from_hex('#FFB300')
                     
+                    # Adquire as travas de hardware e mantém a tela acordada
                     self.adquirir_wakelock()
+                    self.manter_tela_ligada(True)
                 except ValueError:
                     pass
         else:
