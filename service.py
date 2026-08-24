@@ -17,7 +17,7 @@ NotificationBuilder = autoclass('android.app.Notification$Builder')
 NotificationManager = autoclass('android.app.NotificationManager')
 NotificationChannel = autoclass('android.app.NotificationChannel')
 
-# 1. Adquire Trava de CPU e Wi-Fi
+# Trava de CPU e Wi-Fi
 power_manager = service.getSystemService(Context.POWER_SERVICE)
 wake_lock = power_manager.newWakeLock(1, "BtcAlarm::ServiceWakeLock")
 wake_lock.acquire()
@@ -26,7 +26,6 @@ wifi_service = service.getSystemService(Context.WIFI_SERVICE)
 wifi_lock = wifi_service.createWifiLock(3, "BtcAlarm::ServiceWifiLock")
 wifi_lock.acquire()
 
-# 2. Configura Notificação Fixa na Barra (Exigência de Foreground Service no Android)
 CHANNEL_ID = "btc_alarm_channel"
 notification_manager = service.getSystemService(Context.NOTIFICATION_SERVICE)
 
@@ -40,18 +39,16 @@ def criar_notificacao(texto):
     else:
         builder = NotificationBuilder(service)
     
-    builder.setContentTitle("BTC Alarm Ativo")
+    builder.setContentTitle("BTC Alarm")
     builder.setContentText(texto)
     builder.setSmallIcon(service.getApplicationInfo().icon)
     return builder.build()
 
-# Inicia o serviço exibindo a notificação de monitoramento
 service.startForeground(1001, criar_notificacao("Iniciando monitoramento..."))
 
 android_player = None
 
 def acender_e_desbloquear_tela():
-    """Força o acendimento da tela e ignora o bloqueio quando o alvo for atingido"""
     try:
         PythonActivity = autoclass('org.kivy.android.PythonActivity')
         activity = PythonActivity.mActivity
@@ -67,13 +64,16 @@ def acender_e_desbloquear_tela():
         from android.runnable import run_on_ui_thread
         run_on_ui_thread(apply_flags)()
     except Exception as e:
-        print(f"Erro ao acender tela pelo servico: {e}")
+        print(f"Erro ao acender tela: {e}")
 
 def tocar_sirene():
     global android_player
     acender_e_desbloquear_tela()
     try:
-        caminho_abs = os.path.abspath("sirene.mp3")
+        caminho_abs = os.path.join(service.getFilesDir().getAbsolutePath(), "app", "sirene.mp3")
+        if not os.path.exists(caminho_abs):
+            caminho_abs = os.path.abspath("sirene.mp3")
+
         if android_player is not None:
             android_player.release()
 
@@ -84,7 +84,18 @@ def tocar_sirene():
         android_player.prepare()
         android_player.start()
     except Exception as e:
-        print(f"Erro ao tocar sirene no servico: {e}")
+        print(f"Erro ao tocar sirene: {e}")
+
+def parar_sirene():
+    global android_player
+    if android_player is not None:
+        try:
+            if android_player.isPlaying():
+                android_player.stop()
+            android_player.release()
+            android_player = None
+        except Exception:
+            pass
 
 def buscar_preco():
     try:
@@ -99,9 +110,7 @@ def buscar_preco():
         except Exception:
             return None
 
-# 3. Loop Principal do Serviço (Roda a cada 5 segundos no escuro)
 caminho_config = os.path.join(service.getFilesDir().getAbsolutePath(), "app", "alarm_config.json")
-
 alarme_disparado = False
 
 while True:
@@ -114,36 +123,35 @@ while True:
             modo = config.get("modo")
             ativo = config.get("ativo", False)
 
-            if ativo and preco_alvo is not None and not alarme_disparado:
+            if ativo and preco_alvo is not None:
                 preco_atual = buscar_preco()
                 
                 if preco_atual is not None:
-                    # Atualiza texto da notificação na barra
-                    notif = criar_notificacao(f"BTC: U$ {preco_atual:,.2f} | Alvo: U$ {preco_alvo:,.2f}")
-                    notification_manager.notify(1001, notif)
-
+                    # Atualiza o preço atual no arquivo de configuracao para a interface ler
+                    config["preco_atual"] = preco_atual
+                    
                     disparar = False
                     if modo == "ACIMA" and preco_atual >= preco_alvo:
                         disparar = True
                     elif modo == "ABAIXO" and preco_atual <= preco_alvo:
                         disparar = True
 
-                    if disparar:
+                    if disparar and not alarme_disparado:
                         alarme_disparado = True
+                        config["disparado"] = True
                         tocar_sirene()
-                        
-                        # Notificação de emergência ao disparar
-                        notif_alerta = criar_notificacao(f"🚨 ALVO ATINGIDO: U$ {preco_atual:,.2f}! 🚨")
-                        notification_manager.notify(1001, notif_alerta)
+                        notification_manager.notify(1001, criar_notificacao(f"🚨 ALVO ATINGIDO: U$ {preco_atual:,.2f}!"))
+                    elif not disparar:
+                        notification_manager.notify(1001, criar_notificacao(f"BTC: U$ {preco_atual:,.2f} | Alvo: U$ {preco_alvo:,.2f}"))
+
+                    with open(caminho_config, "w") as f:
+                        json.dump(config, f)
 
             elif not ativo:
                 alarme_disparado = False
-                if android_player is not None and android_player.isPlaying():
-                    android_player.stop()
-                    android_player.release()
-                    android_player = None
+                parar_sirene()
 
     except Exception as e:
         print(f"Erro no loop do servico: {e}")
 
-    time.sleep(5)  # Intervalo exato de 5 segundos
+    time.sleep(5)

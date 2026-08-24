@@ -19,7 +19,15 @@ class BtcAlarmApp(App):
         self.modo_alarme = None
         self.alarme_ativo = False
         self.preco_atual_global = 0.0
-        self.caminho_config = "alarm_config.json"
+        
+        # Garante o mesmo caminho absoluto de configuracao que o servico Android lê
+        if platform == 'android':
+            from jnius import autoclass
+            PythonActivity = autoclass('org.kivy.android.PythonActivity')
+            activity = PythonActivity.mActivity
+            self.caminho_config = os.path.join(activity.getFilesDir().getAbsolutePath(), "app", "alarm_config.json")
+        else:
+            self.caminho_config = "alarm_config.json"
 
         layout = BoxLayout(
             orientation='vertical',
@@ -93,6 +101,7 @@ class BtcAlarmApp(App):
         layout.add_widget(Widget())
 
         self.disparar_busca_segundo_plano()
+        Clock.schedule_interval(self.checar_estado_servico, 2)
         Clock.schedule_interval(self.disparar_busca_segundo_plano, 5)
         return layout
 
@@ -101,7 +110,6 @@ class BtcAlarmApp(App):
         self.rect.size = instance.size
 
     def gerenciar_servico_android(self, iniciar=True):
-        """Inicia ou Interrompe o Foreground Service nativo do Android"""
         if platform == 'android':
             try:
                 from jnius import autoclass
@@ -114,16 +122,32 @@ class BtcAlarmApp(App):
                 else:
                     service.stop(activity)
             except Exception as e:
-                print(f"Erro ao gerenciar servico Android: {e}")
+                print(f"Erro no Servico: {e}")
 
     def salvar_configuracao(self, ativo):
         dados = {
             "preco_alvo": self.preco_alvo,
             "modo": self.modo_alarme,
-            "ativo": ativo
+            "ativo": ativo,
+            "disparado": False
         }
+        os.makedirs(os.path.dirname(self.caminho_config), exist_ok=True)
         with open(self.caminho_config, "w") as f:
             json.dump(dados, f)
+
+    def checar_estado_servico(self, dt):
+        """Verifica se o serviço disparou o alarme para atualizar a tela"""
+        if os.path.exists(self.caminho_config):
+            try:
+                with open(self.caminho_config, "r") as f:
+                    dados = json.load(f)
+                if dados.get("disparado", False):
+                    self.txt_status.text = f"🚨 ALVO ATINGIDO: U$ {self.preco_atual_global:,.2f}! 🚨"
+                    self.txt_status.color = get_color_from_hex('#FF3333')
+                    self.btn_acao.text = "PARAR SIRENE"
+                    self.btn_acao.background_color = get_color_from_hex('#D32F2F')
+            except Exception:
+                pass
 
     def disparar_busca_segundo_plano(self, dt=None):
         threading.Thread(target=self.buscar_preco_btc, daemon=True).start()
@@ -165,8 +189,10 @@ class BtcAlarmApp(App):
                         
                     self.txt_status.text = f"Alerta ativo {texto_direcao}: U$ {self.preco_alvo:,.2f}"
                     self.txt_status.color = get_color_from_hex('#FFB300')
-                    self.btn_acao.text = "DESATIVAR ALARME / PARAR SIRENE"
-                    self.btn_acao.background_color = get_color_from_hex('#D32F2F')
+                    
+                    # Rótulo claro apenas para desativar enquanto monitora
+                    self.btn_acao.text = "Desativar Alarme"
+                    self.btn_acao.background_color = get_color_from_hex('#C62828')
 
                     self.salvar_configuracao(ativo=True)
                     self.gerenciar_servico_android(iniciar=True)
