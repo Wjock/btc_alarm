@@ -19,8 +19,9 @@ class BtcAlarmApp(App):
         self.modo_alarme = None
         self.alarme_ativo = False
         self.preco_atual_global = 0.0
-        
-        # Garante o mesmo caminho absoluto de configuracao que o servico Android lê
+        self.alarme_tocando = False
+        self.android_player = None
+
         if platform == 'android':
             from jnius import autoclass
             PythonActivity = autoclass('org.kivy.android.PythonActivity')
@@ -101,8 +102,7 @@ class BtcAlarmApp(App):
         layout.add_widget(Widget())
 
         self.disparar_busca_segundo_plano()
-        Clock.schedule_interval(self.checar_estado_servico, 2)
-        Clock.schedule_interval(self.disparar_busca_segundo_plano, 5)
+        Clock.schedule_interval(self.disparar_busca_segundo_plano, 4)
         return layout
 
     def _update_rect(self, instance, value):
@@ -115,14 +115,15 @@ class BtcAlarmApp(App):
                 from jnius import autoclass
                 PythonActivity = autoclass('org.kivy.android.PythonActivity')
                 activity = PythonActivity.mActivity
-                service = autoclass('org.test.btcalarm.ServiceMonitoramento')
                 
+                # Tenta inicializar a classe do serviço
+                service = autoclass('org.test.btcalarm.ServiceMonitoramento')
                 if iniciar:
                     service.start(activity, '')
                 else:
                     service.stop(activity)
             except Exception as e:
-                print(f"Erro no Servico: {e}")
+                print(f"Aviso ao gerenciar servico: {e}")
 
     def salvar_configuracao(self, ativo):
         dados = {
@@ -131,46 +132,97 @@ class BtcAlarmApp(App):
             "ativo": ativo,
             "disparado": False
         }
-        os.makedirs(os.path.dirname(self.caminho_config), exist_ok=True)
-        with open(self.caminho_config, "w") as f:
-            json.dump(dados, f)
-
-    def checar_estado_servico(self, dt):
-        """Verifica se o serviço disparou o alarme para atualizar a tela"""
-        if os.path.exists(self.caminho_config):
-            try:
-                with open(self.caminho_config, "r") as f:
-                    dados = json.load(f)
-                if dados.get("disparado", False):
-                    self.txt_status.text = f"🚨 ALVO ATINGIDO: U$ {self.preco_atual_global:,.2f}! 🚨"
-                    self.txt_status.color = get_color_from_hex('#FF3333')
-                    self.btn_acao.text = "PARAR SIRENE"
-                    self.btn_acao.background_color = get_color_from_hex('#D32F2F')
-            except Exception:
-                pass
+        try:
+            os.makedirs(os.path.dirname(self.caminho_config), exist_ok=True)
+            with open(self.caminho_config, "w") as f:
+                json.dump(dados, f)
+        except Exception:
+            pass
 
     def disparar_busca_segundo_plano(self, dt=None):
         threading.Thread(target=self.buscar_preco_btc, daemon=True).start()
 
     def buscar_preco_btc(self):
         try:
-            import yfinance as yf
-            ticker = yf.Ticker("BTC-USD")
-            preco = float(ticker.fast_info['last_price'])
+            import requests
+            res = requests.get("https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT", timeout=4).json()
+            preco = float(res["price"])
             self.atualizar_tela_segura(preco)
         except Exception:
             try:
-                import requests
-                res = requests.get("https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT", timeout=4).json()
-                preco = float(res["price"])
+                import yfinance as yf
+                ticker = yf.Ticker("BTC-USD")
+                preco = float(ticker.fast_info['last_price'])
                 self.atualizar_tela_segura(preco)
             except Exception:
                 pass
 
+    
     @mainthread
     def atualizar_tela_segura(self, preco_obtido):
-        self.preco_atual_global = preco_obtido
+        self.preco_atual_global = float(preco_obtido)
         self.txt_preco.text = f"U$ {self.preco_atual_global:,.2f}"
+
+        if self.alarme_ativo and self.preco_alvo is not None and not self.alarme_tocando:
+            alvo = float(self.preco_alvo)
+            atual = float(self.preco_atual_global)
+            
+            disparar = False
+            if self.modo_alarme == "ACIMA" and atual >= alvo:
+                disparar = True
+            elif self.modo_alarme == "ABAIXO" and atual <= alvo:
+                disparar = True
+
+            # Diagnosticando no Logcat
+            print(f"[BTC_DEBUG] Modo: {self.modo_alarme} | Atual: {atual} | Alvo: {alvo} | Disparar: {disparar}")
+
+            if disparar:
+                print("[BTC_DEBUG] >>> ENTROU NA ROTINA DISPARAR ALARME! <<<")
+                self.disparar_alarme()
+
+    def disparar_alarme(self):
+        self.alarme_tocando = True
+        # Confirmação visual imediata na tela
+        self.txt_status.text = f"🚨 ALVO ATINGIDO: U$ {self.preco_atual_global:,.2f}! 🚨"
+        self.txt_status.color = get_color_from_hex('#FF3333')
+        self.btn_acao.text = "PARAR SIRENE"
+        self.btn_acao.background_color = get_color_from_hex('#D32F2F')
+        
+        self.acender_e_desbloquear_tela()
+        self.tocar_sirene()
+        
+    def tocar_sirene_local(self):
+        nome_arquivo = "sirene.mp3"
+        caminho_abs = os.path.abspath(nome_arquivo)
+
+        if platform == 'android':
+            try:
+                from jnius import autoclass
+                MediaPlayer = autoclass('android.media.MediaPlayer')
+                AudioManager = autoclass('android.media.AudioManager')
+                
+                if self.android_player is not None:
+                    self.android_player.release()
+
+                self.android_player = MediaPlayer()
+                self.android_player.setDataSource(caminho_abs)
+                self.android_player.setAudioStreamType(AudioManager.STREAM_ALARM)
+                self.android_player.setLooping(True)
+                self.android_player.prepare()
+                self.android_player.start()
+            except Exception as e:
+                print(f"Erro audio local: {e}")
+
+    def parar_sirene_local(self):
+        if platform == 'android':
+            if self.android_player is not None:
+                try:
+                    if self.android_player.isPlaying():
+                        self.android_player.stop()
+                    self.android_player.release()
+                    self.android_player = None
+                except Exception:
+                    pass
 
     def alternar_alarme(self, instance):
         if not self.alarme_ativo:
@@ -179,6 +231,7 @@ class BtcAlarmApp(App):
                     limpo = self.input_alvo.text.replace(",", ".")
                     self.preco_alvo = float(limpo)
                     self.alarme_ativo = True
+                    self.alarme_tocando = False
                     
                     if self.preco_alvo > self.preco_atual_global:
                         self.modo_alarme = "ACIMA"
@@ -190,7 +243,6 @@ class BtcAlarmApp(App):
                     self.txt_status.text = f"Alerta ativo {texto_direcao}: U$ {self.preco_alvo:,.2f}"
                     self.txt_status.color = get_color_from_hex('#FFB300')
                     
-                    # Rótulo claro apenas para desativar enquanto monitora
                     self.btn_acao.text = "Desativar Alarme"
                     self.btn_acao.background_color = get_color_from_hex('#C62828')
 
@@ -199,7 +251,9 @@ class BtcAlarmApp(App):
                 except ValueError:
                     pass
         else:
+            self.parar_sirene_local()
             self.alarme_ativo = False
+            self.alarme_tocando = False
             self.preco_alvo = None
             self.modo_alarme = None
             self.input_alvo.text = ""
