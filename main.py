@@ -1,4 +1,3 @@
-
 import os
 import threading
 from kivy.app import App
@@ -22,21 +21,19 @@ class BtcAlarmApp(App):
         
         self.android_player = None
         self.pc_sirene = None
+        self.wake_lock = None
 
-        # Layout Principal focado no topo da tela
         layout = BoxLayout(
             orientation='vertical',
-            padding=[30, 25, 30, 20],
-            spacing=25
+            padding=[30, 40, 30, 20],
+            spacing=15
         )
         
-        # Fundo do App Escuro (#12121A)
         with layout.canvas.before:
             Color(*get_color_from_hex('#12121A'))
             self.rect = Rectangle(size=layout.size, pos=layout.pos)
             layout.bind(size=self._update_rect, pos=self._update_rect)
 
-        # 1. Título
         self.txt_titulo = Label(
             text="Cotação Atual do Bitcoin (USD)", 
             font_size='15sp', 
@@ -45,7 +42,6 @@ class BtcAlarmApp(App):
             color=get_color_from_hex('#B0B0C0')
         )
         
-        # 2. Preço Principal
         self.txt_preco = Label(
             text="Buscando Mercado...", 
             font_size='28sp', 
@@ -55,16 +51,15 @@ class BtcAlarmApp(App):
             color=get_color_from_hex('#00E676')
         )
         
-        # 3. Campo de Entrada com dobro de altura e focado no Teclado Numérico
         self.input_alvo = TextInput(
             hint_text="Definir Valor Alvo (U$)", 
             multiline=False, 
             input_filter='float',
-            input_type='number',         # Solicita teclado numerico ao Android
-            size_hint=(0.9, None),       # Ocupa 90% da largura
-            pos_hint={'center_x': 0.5},   # Centralizado
-            height=80,                   # Dobro da altura anterior
-            font_size='22sp',            # Fonte maior
+            input_type='number',
+            size_hint=(0.9, None),
+            pos_hint={'center_x': 0.5},
+            height=70,
+            font_size='20sp',
             halign='center',
             background_color=get_color_from_hex('#2A2A38'),
             foreground_color=get_color_from_hex('#FFFFFF'),
@@ -72,7 +67,6 @@ class BtcAlarmApp(App):
             cursor_color=get_color_from_hex('#00E676')
         )
         
-        # 4. Botão de Ação Centralizado
         self.btn_acao = Button(
             text="Ativar Alarme", 
             background_normal='',
@@ -85,7 +79,6 @@ class BtcAlarmApp(App):
         )
         self.btn_acao.bind(on_press=self.alternar_alarme)
 
-        # 5. Status do Alarme
         self.txt_status = Label(
             text="Nenhum alarme programado", 
             font_size='14sp', 
@@ -94,14 +87,11 @@ class BtcAlarmApp(App):
             color=get_color_from_hex('#808080')
         )
 
-        # Adiciona os elementos no topo da interface
         layout.add_widget(self.txt_titulo)
         layout.add_widget(self.txt_preco)
         layout.add_widget(self.input_alvo)
         layout.add_widget(self.btn_acao)
         layout.add_widget(self.txt_status)
-
-        # Espaçador flexível que empurra toda a interface para a metade superior da tela
         layout.add_widget(Widget())
 
         self.disparar_busca_segundo_plano()
@@ -111,6 +101,34 @@ class BtcAlarmApp(App):
     def _update_rect(self, instance, value):
         self.rect.pos = instance.pos
         self.rect.size = instance.size
+
+    def adquirir_wakelock(self):
+        """Impede que a CPU do celular durma quando a tela apagar"""
+        if platform == 'android' and self.wake_lock is None:
+            try:
+                from jnius import autoclass
+                PythonActivity = autoclass('org.kivy.android.PythonActivity')
+                Context = autoclass('android.content.Context')
+                PowerManager = autoclass('android.os.PowerManager')
+
+                activity = PythonActivity.mActivity
+                power_manager = activity.getSystemService(Context.POWER_SERVICE)
+                
+                # PARTIAL_WAKE_LOCK (1) mantém o processador ativo mesmo com tela desligada
+                self.wake_lock = power_manager.newWakeLock(1, "BtcAlarm::WakeLockTag")
+                self.wake_lock.acquire()
+            except Exception as e:
+                print(f"Erro ao adquirir WakeLock: {e}")
+
+    def soltar_wakelock(self):
+        """Libera o processador para economizar bateria quando o alarme for desligado"""
+        if platform == 'android' and self.wake_lock is not None:
+            try:
+                if self.wake_lock.isHeld():
+                    self.wake_lock.release()
+                self.wake_lock = None
+            except Exception as e:
+                print(f"Erro ao soltar WakeLock: {e}")
 
     def disparar_busca_segundo_plano(self, dt=None):
         threading.Thread(target=self.buscar_preco_btc, daemon=True).start()
@@ -219,10 +237,14 @@ class BtcAlarmApp(App):
                         
                     self.txt_status.text = f"Alerta ativo {texto_direcao}: U$ {self.preco_alvo:,.2f}"
                     self.txt_status.color = get_color_from_hex('#FFB300')
+                    
+                    # Ativa a trava de CPU para continuar monitorando no escuro
+                    self.adquirir_wakelock()
                 except ValueError:
                     pass
         else:
             self.parar_sirene()
+            self.soltar_wakelock()
             self.alarme_tocando = False
             self.preco_alvo = None
             self.modo_alarme = None
@@ -234,6 +256,7 @@ class BtcAlarmApp(App):
 
     def on_stop(self):
         self.parar_sirene()
+        self.soltar_wakelock()
 
 if __name__ == '__main__':
     BtcAlarmApp().run()
