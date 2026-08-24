@@ -25,8 +25,8 @@ class BtcAlarmApp(App):
 
         layout = BoxLayout(
             orientation='vertical',
-            padding=[30, 60, 30, 20],
-            spacing=25
+            padding=[30, 40, 30, 20],
+            spacing=15
         )
         
         with layout.canvas.before:
@@ -58,7 +58,7 @@ class BtcAlarmApp(App):
             input_type='number',
             size_hint=(0.9, None),
             pos_hint={'center_x': 0.5},
-            height=90,
+            height=70,
             font_size='20sp',
             halign='center',
             background_color=get_color_from_hex('#2A2A38'),
@@ -102,8 +102,32 @@ class BtcAlarmApp(App):
         self.rect.pos = instance.pos
         self.rect.size = instance.size
 
-def acender_e_desbloquear_tela(self):
-        """Força a tela a acender e exibe o app por cima do bloqueio do Android"""
+    def adquirir_wakelock(self):
+        if platform == 'android' and self.wake_lock is None:
+            try:
+                from jnius import autoclass
+                PythonActivity = autoclass('org.kivy.android.PythonActivity')
+                Context = autoclass('android.content.Context')
+                PowerManager = autoclass('android.os.PowerManager')
+
+                activity = PythonActivity.mActivity
+                power_manager = activity.getSystemService(Context.POWER_SERVICE)
+                
+                self.wake_lock = power_manager.newWakeLock(1, "BtcAlarm::WakeLockTag")
+                self.wake_lock.acquire()
+            except Exception as e:
+                print(f"Erro ao adquirir WakeLock: {e}")
+
+    def soltar_wakelock(self):
+        if platform == 'android' and self.wake_lock is not None:
+            try:
+                if self.wake_lock.isHeld():
+                    self.wake_lock.release()
+                self.wake_lock = None
+            except Exception as e:
+                print(f"Erro ao soltar WakeLock: {e}")
+
+    def acender_e_desbloquear_tela(self):
         if platform == 'android':
             try:
                 from jnius import autoclass
@@ -112,7 +136,6 @@ def acender_e_desbloquear_tela(self):
                 
                 activity = PythonActivity.mActivity
                 
-                # Flags nativas para acender a tela e furar o bloqueio
                 flags = (
                     WindowManager.FLAG_SHOW_WHEN_LOCKED |
                     WindowManager.FLAG_TURN_SCREEN_ON |
@@ -120,7 +143,6 @@ def acender_e_desbloquear_tela(self):
                     WindowManager.FLAG_KEEP_SCREEN_ON
                 )
                 
-                # Executa na UI Thread do Android
                 def apply_flags():
                     activity.getWindow().addFlags(flags)
 
@@ -128,16 +150,6 @@ def acender_e_desbloquear_tela(self):
                 run_on_ui_thread(apply_flags)()
             except Exception as e:
                 print(f"Erro ao forçar acendimento da tela: {e}")
-                
-    def soltar_wakelock(self):
-        """Libera o processador para economizar bateria quando o alarme for desligado"""
-        if platform == 'android' and self.wake_lock is not None:
-            try:
-                if self.wake_lock.isHeld():
-                    self.wake_lock.release()
-                self.wake_lock = None
-            except Exception as e:
-                print(f"Erro ao soltar WakeLock: {e}")
 
     def disparar_busca_segundo_plano(self, dt=None):
         threading.Thread(target=self.buscar_preco_btc, daemon=True).start()
@@ -186,11 +198,10 @@ def acender_e_desbloquear_tela(self):
         else:
             self.txt_preco.text = "Conectando..."
 
-def tocar_sirene(self):
+    def tocar_sirene(self):
         nome_arquivo = "sirene.mp3"
         caminho_abs = os.path.abspath(nome_arquivo)
 
-        # Força o acendimento da tela assim que atinge o alvo
         self.acender_e_desbloquear_tela()
 
         if platform == 'android':
@@ -204,8 +215,6 @@ def tocar_sirene(self):
 
                 self.android_player = MediaPlayer()
                 self.android_player.setDataSource(caminho_abs)
-                
-                # Define o fluxo de áudio como ALARME (toca mesmo se a Mídia estiver baixa)
                 self.android_player.setAudioStreamType(AudioManager.STREAM_ALARM)
                 self.android_player.setLooping(True)
                 self.android_player.prepare()
@@ -222,6 +231,7 @@ def tocar_sirene(self):
                     self.pc_sirene.play()
             except Exception:
                 pass
+
     def parar_sirene(self):
         if platform == 'android':
             if self.android_player is not None:
@@ -254,7 +264,6 @@ def tocar_sirene(self):
                     self.txt_status.text = f"Alerta ativo {texto_direcao}: U$ {self.preco_alvo:,.2f}"
                     self.txt_status.color = get_color_from_hex('#FFB300')
                     
-                    # Ativa a trava de CPU para continuar monitorando no escuro
                     self.adquirir_wakelock()
                 except ValueError:
                     pass
