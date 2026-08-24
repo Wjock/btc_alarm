@@ -1,4 +1,5 @@
 import os
+import json
 import threading
 from kivy.app import App
 from kivy.uix.boxlayout import BoxLayout
@@ -16,15 +17,10 @@ class BtcAlarmApp(App):
         self.title = "BTC Alarm"
         self.preco_alvo = None
         self.modo_alarme = None
-        self.alarme_tocando = False
+        self.alarme_ativo = False
         self.preco_atual_global = 0.0
-        
-        self.android_player = None
-        self.pc_sirene = None
-        self.wake_lock = None
-        self.wifi_lock = None
+        self.caminho_config = "alarm_config.json"
 
-        # Layout ajustado conforme suas preferências
         layout = BoxLayout(
             orientation='vertical',
             padding=[30, 100, 30, 20],
@@ -97,113 +93,37 @@ class BtcAlarmApp(App):
         layout.add_widget(Widget())
 
         self.disparar_busca_segundo_plano()
-        Clock.schedule_interval(self.disparar_busca_segundo_plano, 4)
+        Clock.schedule_interval(self.disparar_busca_segundo_plano, 5)
         return layout
-
-    def on_pause(self):
-        return True
-
-    def on_resume(self):
-        pass
 
     def _update_rect(self, instance, value):
         self.rect.pos = instance.pos
         self.rect.size = instance.size
 
-    def manter_tela_ligada(self, ligar=True):
-        """Impede a tela de apagar/suspender enquanto o alarme estiver ativo"""
+    def gerenciar_servico_android(self, iniciar=True):
+        """Inicia ou Interrompe o Foreground Service nativo do Android"""
         if platform == 'android':
             try:
                 from jnius import autoclass
                 PythonActivity = autoclass('org.kivy.android.PythonActivity')
-                WindowManager = autoclass('android.view.WindowManager$LayoutParams')
-                
                 activity = PythonActivity.mActivity
-                flag = WindowManager.FLAG_KEEP_SCREEN_ON
+                service = autoclass('org.test.btcalarm.ServiceMonitoramento')
                 
-                def apply_screen_flag():
-                    if ligar:
-                        activity.getWindow().addFlags(flag)
-                    else:
-                        activity.getWindow().clearFlags(flag)
-
-                from android.runnable import run_on_ui_thread
-                run_on_ui_thread(apply_screen_flag)()
+                if iniciar:
+                    service.start(activity, '')
+                else:
+                    service.stop(activity)
             except Exception as e:
-                print(f"Erro ao alterar flag de tela: {e}")
+                print(f"Erro ao gerenciar servico Android: {e}")
 
-    def adquirir_wakelock(self):
-        """Mantém a CPU e a Conexão Wi-Fi/Rede ativas"""
-        if platform == 'android':
-            try:
-                from jnius import autoclass
-                PythonActivity = autoclass('org.kivy.android.PythonActivity')
-                Context = autoclass('android.content.Context')
-                PowerManager = autoclass('android.os.PowerManager')
-                WifiManager = autoclass('android.net.wifi.WifiManager')
-
-                activity = PythonActivity.mActivity
-                
-                # Trava do Processador (CPU)
-                power_manager = activity.getSystemService(Context.POWER_SERVICE)
-                if self.wake_lock is None:
-                    self.wake_lock = power_manager.newWakeLock(1, "BtcAlarm::WakeLockTag")
-                    self.wake_lock.acquire()
-
-                # Trava da Placa Wi-Fi/Rede
-                wifi_service = activity.getSystemService(Context.WIFI_SERVICE)
-                if self.wifi_lock is None:
-                    self.wifi_lock = wifi_service.createWifiLock(3, "BtcAlarm::WifiLockTag")
-                    self.wifi_lock.acquire()
-
-            except Exception as e:
-                print(f"Erro ao adquirir Trava de CPU/Rede: {e}")
-
-    def soltar_wakelock(self):
-        """Libera a CPU, a Rede e volta a tela ao comportamento normal"""
-        self.manter_tela_ligada(False)
-
-        if platform == 'android':
-            if self.wake_lock is not None:
-                try:
-                    if self.wake_lock.isHeld():
-                        self.wake_lock.release()
-                    self.wake_lock = None
-                except Exception:
-                    pass
-
-            if self.wifi_lock is not None:
-                try:
-                    if self.wifi_lock.isHeld():
-                        self.wifi_lock.release()
-                    self.wifi_lock = None
-                except Exception:
-                    pass
-
-    def acender_e_desbloquear_tela(self):
-        """Força a exibição por cima da tela de bloqueio ao disparar"""
-        if platform == 'android':
-            try:
-                from jnius import autoclass
-                PythonActivity = autoclass('org.kivy.android.PythonActivity')
-                WindowManager = autoclass('android.view.WindowManager$LayoutParams')
-                
-                activity = PythonActivity.mActivity
-                
-                flags = (
-                    WindowManager.FLAG_SHOW_WHEN_LOCKED |
-                    WindowManager.FLAG_TURN_SCREEN_ON |
-                    WindowManager.FLAG_DISMISS_KEYGUARD |
-                    WindowManager.FLAG_KEEP_SCREEN_ON
-                )
-                
-                def apply_flags():
-                    activity.getWindow().addFlags(flags)
-
-                from android.runnable import run_on_ui_thread
-                run_on_ui_thread(apply_flags)()
-            except Exception as e:
-                print(f"Erro ao acender a tela: {e}")
+    def salvar_configuracao(self, ativo):
+        dados = {
+            "preco_alvo": self.preco_alvo,
+            "modo": self.modo_alarme,
+            "ativo": ativo
+        }
+        with open(self.caminho_config, "w") as f:
+            json.dump(dados, f)
 
     def disparar_busca_segundo_plano(self, dt=None):
         threading.Thread(target=self.buscar_preco_btc, daemon=True).start()
@@ -221,92 +141,20 @@ class BtcAlarmApp(App):
                 preco = float(res["price"])
                 self.atualizar_tela_segura(preco)
             except Exception:
-                self.notificar_erro_tela()
+                pass
 
     @mainthread
     def atualizar_tela_segura(self, preco_obtido):
         self.preco_atual_global = preco_obtido
         self.txt_preco.text = f"U$ {self.preco_atual_global:,.2f}"
 
-        if self.preco_alvo is not None and not self.alarme_tocando:
-            disparar = False
-            if self.modo_alarme == "ACIMA" and self.preco_atual_global >= self.preco_alvo:
-                disparar = True
-            elif self.modo_alarme == "ABAIXO" and self.preco_atual_global <= self.preco_alvo:
-                disparar = True
-
-            if disparar:
-                self.alarme_tocando = True
-                self.txt_status.text = f"🚨 ALVO ATINGIDO: U$ {self.preco_atual_global:,.2f}! 🚨"
-                self.txt_status.color = get_color_from_hex('#FF3333')
-                
-                self.tocar_sirene()
-                
-                self.btn_acao.text = "PARAR SIRENE"
-                self.btn_acao.background_color = get_color_from_hex('#D32F2F')
-
-    @mainthread
-    def notificar_erro_tela(self):
-        if self.preco_atual_global > 0:
-            self.txt_preco.text = f"U$ {self.preco_atual_global:,.2f} (Sinc...)"
-        else:
-            self.txt_preco.text = "Conectando..."
-
-    def tocar_sirene(self):
-        nome_arquivo = "sirene.mp3"
-        caminho_abs = os.path.abspath(nome_arquivo)
-
-        self.acender_e_desbloquear_tela()
-
-        if platform == 'android':
-            try:
-                from jnius import autoclass
-                MediaPlayer = autoclass('android.media.MediaPlayer')
-                AudioManager = autoclass('android.media.AudioManager')
-                
-                if self.android_player is not None:
-                    self.android_player.release()
-
-                self.android_player = MediaPlayer()
-                self.android_player.setDataSource(caminho_abs)
-                self.android_player.setAudioStreamType(AudioManager.STREAM_ALARM)
-                self.android_player.setLooping(True)
-                self.android_player.prepare()
-                self.android_player.start()
-            except Exception as e:
-                self.txt_status.text = f"Erro Audio Android: {str(e)}"
-        else:
-            try:
-                from kivy.core.audio import SoundLoader
-                if not self.pc_sirene:
-                    self.pc_sirene = SoundLoader.load(caminho_abs)
-                if self.pc_sirene:
-                    self.pc_sirene.loop = True
-                    self.pc_sirene.play()
-            except Exception:
-                pass
-
-    def parar_sirene(self):
-        if platform == 'android':
-            if self.android_player is not None:
-                try:
-                    if self.android_player.isPlaying():
-                        self.android_player.stop()
-                    self.android_player.release()
-                    self.android_player = None
-                except Exception:
-                    pass
-        else:
-            if self.pc_sirene:
-                self.pc_sirene.stop()
-
     def alternar_alarme(self, instance):
-        if not self.alarme_tocando:
+        if not self.alarme_ativo:
             if self.input_alvo.text and self.preco_atual_global > 0:
                 try:
                     limpo = self.input_alvo.text.replace(",", ".")
                     self.preco_alvo = float(limpo)
-                    self.alarme_tocando = False
+                    self.alarme_ativo = True
                     
                     if self.preco_alvo > self.preco_atual_global:
                         self.modo_alarme = "ACIMA"
@@ -317,16 +165,15 @@ class BtcAlarmApp(App):
                         
                     self.txt_status.text = f"Alerta ativo {texto_direcao}: U$ {self.preco_alvo:,.2f}"
                     self.txt_status.color = get_color_from_hex('#FFB300')
-                    
-                    # Adquire as travas de hardware e mantém a tela acordada
-                    self.adquirir_wakelock()
-                    self.manter_tela_ligada(True)
+                    self.btn_acao.text = "DESATIVAR ALARME / PARAR SIRENE"
+                    self.btn_acao.background_color = get_color_from_hex('#D32F2F')
+
+                    self.salvar_configuracao(ativo=True)
+                    self.gerenciar_servico_android(iniciar=True)
                 except ValueError:
                     pass
         else:
-            self.parar_sirene()
-            self.soltar_wakelock()
-            self.alarme_tocando = False
+            self.alarme_ativo = False
             self.preco_alvo = None
             self.modo_alarme = None
             self.input_alvo.text = ""
@@ -335,9 +182,8 @@ class BtcAlarmApp(App):
             self.btn_acao.text = "Ativar Alarme"
             self.btn_acao.background_color = get_color_from_hex('#00A843')
 
-    def on_stop(self):
-        self.parar_sirene()
-        self.soltar_wakelock()
+            self.salvar_configuracao(ativo=False)
+            self.gerenciar_servico_android(iniciar=False)
 
 if __name__ == '__main__':
     BtcAlarmApp().run()
