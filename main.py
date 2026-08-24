@@ -25,8 +25,8 @@ class BtcAlarmApp(App):
 
         layout = BoxLayout(
             orientation='vertical',
-            padding=[30, 40, 30, 20],
-            spacing=15
+            padding=[30, 60, 30, 20],
+            spacing=25
         )
         
         with layout.canvas.before:
@@ -58,7 +58,7 @@ class BtcAlarmApp(App):
             input_type='number',
             size_hint=(0.9, None),
             pos_hint={'center_x': 0.5},
-            height=70,
+            height=90,
             font_size='20sp',
             halign='center',
             background_color=get_color_from_hex('#2A2A38'),
@@ -102,24 +102,33 @@ class BtcAlarmApp(App):
         self.rect.pos = instance.pos
         self.rect.size = instance.size
 
-    def adquirir_wakelock(self):
-        """Impede que a CPU do celular durma quando a tela apagar"""
-        if platform == 'android' and self.wake_lock is None:
+def acender_e_desbloquear_tela(self):
+        """Força a tela a acender e exibe o app por cima do bloqueio do Android"""
+        if platform == 'android':
             try:
                 from jnius import autoclass
                 PythonActivity = autoclass('org.kivy.android.PythonActivity')
-                Context = autoclass('android.content.Context')
-                PowerManager = autoclass('android.os.PowerManager')
-
-                activity = PythonActivity.mActivity
-                power_manager = activity.getSystemService(Context.POWER_SERVICE)
+                WindowManager = autoclass('android.view.WindowManager$LayoutParams')
                 
-                # PARTIAL_WAKE_LOCK (1) mantém o processador ativo mesmo com tela desligada
-                self.wake_lock = power_manager.newWakeLock(1, "BtcAlarm::WakeLockTag")
-                self.wake_lock.acquire()
-            except Exception as e:
-                print(f"Erro ao adquirir WakeLock: {e}")
+                activity = PythonActivity.mActivity
+                
+                # Flags nativas para acender a tela e furar o bloqueio
+                flags = (
+                    WindowManager.FLAG_SHOW_WHEN_LOCKED |
+                    WindowManager.FLAG_TURN_SCREEN_ON |
+                    WindowManager.FLAG_DISMISS_KEYGUARD |
+                    WindowManager.FLAG_KEEP_SCREEN_ON
+                )
+                
+                # Executa na UI Thread do Android
+                def apply_flags():
+                    activity.getWindow().addFlags(flags)
 
+                from android.runnable import run_on_ui_thread
+                run_on_ui_thread(apply_flags)()
+            except Exception as e:
+                print(f"Erro ao forçar acendimento da tela: {e}")
+                
     def soltar_wakelock(self):
         """Libera o processador para economizar bateria quando o alarme for desligado"""
         if platform == 'android' and self.wake_lock is not None:
@@ -177,19 +186,27 @@ class BtcAlarmApp(App):
         else:
             self.txt_preco.text = "Conectando..."
 
-    def tocar_sirene(self):
+def tocar_sirene(self):
         nome_arquivo = "sirene.mp3"
         caminho_abs = os.path.abspath(nome_arquivo)
+
+        # Força o acendimento da tela assim que atinge o alvo
+        self.acender_e_desbloquear_tela()
 
         if platform == 'android':
             try:
                 from jnius import autoclass
                 MediaPlayer = autoclass('android.media.MediaPlayer')
+                AudioManager = autoclass('android.media.AudioManager')
+                
                 if self.android_player is not None:
                     self.android_player.release()
 
                 self.android_player = MediaPlayer()
                 self.android_player.setDataSource(caminho_abs)
+                
+                # Define o fluxo de áudio como ALARME (toca mesmo se a Mídia estiver baixa)
+                self.android_player.setAudioStreamType(AudioManager.STREAM_ALARM)
                 self.android_player.setLooping(True)
                 self.android_player.prepare()
                 self.android_player.start()
@@ -205,7 +222,6 @@ class BtcAlarmApp(App):
                     self.pc_sirene.play()
             except Exception:
                 pass
-
     def parar_sirene(self):
         if platform == 'android':
             if self.android_player is not None:

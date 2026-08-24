@@ -22,7 +22,9 @@ log_level = 2
 warn_on_root = 1
 
 # Adiciona permissoes de WakeLock, Servico em Primeiro Plano e Internet
-android.permissions = INTERNET, WAKE_LOCK, FOREGROUND_SERVICE, FOREGROUND_SERVICE_DATA_SYNC, REQUEST_IGNORE_BATTERY_OPTIMIZATIONS
+android.permissions = INTERNET, WAKE_LOCK, FOREGROUND_SERVICE, FOREGROUND_SERVICE_DATA_SYNC, REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, DISABLE_KEYGUARD, USE_FULL_SCREEN_INTENT
 
 # Garante que o servico fique ativo em background
 android.wake_lock = True
+
+
