@@ -53,6 +53,14 @@ jobs:
           zip \
           unzip
 
+    - name: Accept Android Licenses Automatically
+      run: |
+        mkdir -p ~/.android
+        touch ~/.android/repositories.cfg
+        mkdir -p ~/.buildozer/android/platform/android-sdk/licenses
+        echo -e "89339af155515736924ae0ce604132650785d07c\nd56f5187479451eabf01fb78af6dfcb131a6481e\n24333f8a637173a36d673d7ef806e4b0e76ee898" > ~/.buildozer/android/platform/android-sdk/licenses/android-sdk-license
+        echo -e "84831b9409646a918e30573bab4c9c91346d8abd" > ~/.buildozer/android/platform/android-sdk/licenses/android-sdk-preview-license
+
     - name: Install Buildozer & Cython
       run: |
         pip install --upgrade pip setuptools
@@ -60,7 +68,8 @@ jobs:
 
     - name: Build with Buildozer
       run: |
-        buildozer -v android debug
+        # Passa o 'yes' para responder 'y' automaticamente caso o sdkmanager pergunte
+        yes | buildozer -v android debug
         mv bin/*.apk bin/btc_alarm.apk
 
     - name: Upload APK Artifact
