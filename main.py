@@ -1,6 +1,6 @@
 import os
-import json
 import threading
+from time import strftime
 from kivy.app import App
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.widget import Widget
@@ -22,11 +22,12 @@ class BtcAlarmApp(App):
         self.preco_atual_global = 0.0
 
         self.android_player = None
+        self.wake_lock = None
 
         layout = BoxLayout(
             orientation='vertical',
             padding=[30, 100, 30, 20],
-            spacing=30
+            spacing=20
         )
         
         with layout.canvas.before:
@@ -81,7 +82,7 @@ class BtcAlarmApp(App):
 
         self.txt_status = Label(
             text="Nenhum alarme programado", 
-            font_size='14sp', 
+            font_size='13sp', 
             size_hint=(1, None),
             height=35,
             color=get_color_from_hex('#808080')
@@ -98,9 +99,55 @@ class BtcAlarmApp(App):
         Clock.schedule_interval(self.disparar_busca_ui, 3)
         return layout
 
+    def on_pause(self):
+        return True
+
+    def on_resume(self):
+        pass
+
     def _update_rect(self, instance, value):
         self.rect.pos = instance.pos
         self.rect.size = instance.size
+
+    def adquire_wake_lock(self):
+        if platform == 'android':
+            try:
+                from jnius import autoclass
+                PythonActivity = autoclass('org.kivy.android.PythonActivity')
+                Context = autoclass('android.content.Context')
+                activity = PythonActivity.mActivity
+                
+                pm = activity.getSystemService(Context.POWER_SERVICE)
+                if self.wake_lock is None:
+                    # PARTIAL_WAKE_LOCK
+                    self.wake_lock = pm.newWakeLock(1, "BTCAlarm:CpuWakeLock")
+                    self.wake_lock.acquire()
+            except Exception as e:
+                print(f"Erro WakeLock: {e}")
+
+    def solta_wake_lock(self):
+        if platform == 'android' and self.wake_lock is not None:
+            try:
+                if self.wake_lock.isHeld():
+                    self.wake_lock.release()
+                self.wake_lock = None
+            except Exception as e:
+                print(f"Erro soltar WakeLock: {e}")
+
+    def vibrar_aparelho(self):
+        """Dispara vibracao via Hardware do Android"""
+        if platform == 'android':
+            try:
+                from jnius import autoclass
+                PythonActivity = autoclass('org.kivy.android.PythonActivity')
+                Context = autoclass('android.content.Context')
+                activity = PythonActivity.mActivity
+                vibrator = activity.getSystemService(Context.VIBRATOR_SERVICE)
+                if vibrator and vibrator.hasVibrator():
+                    # Vibra por 3 segundos
+                    vibrator.vibrate(3000)
+            except Exception as e:
+                print(f"Erro ao vibrar: {e}")
 
     def disparar_busca_ui(self, dt=None):
         threading.Thread(target=self.buscar_preco_btc, daemon=True).start()
@@ -116,6 +163,7 @@ class BtcAlarmApp(App):
 
     @mainthread
     def atualizar_preco_ui(self, preco_obtido):
+        hora_atual = strftime("%H:%M:%S")
         self.preco_atual_global = float(preco_obtido)
         self.txt_preco.text = f"U$ {self.preco_atual_global:,.2f}"
 
@@ -130,16 +178,19 @@ class BtcAlarmApp(App):
                 disparar = True
 
             if disparar:
-                self.disparar_alarme()
+                self.disparar_alarme(hora_atual)
+            else:
+                self.txt_status.text = f"Checado às {hora_atual} | Alvo: U$ {alvo:,.2f}"
 
-    def disparar_alarme(self):
+    def disparar_alarme(self, hora_disparo):
         self.alarme_tocando = True
-        self.txt_status.text = f"🚨 ALVO ATINGIDO: U$ {self.preco_atual_global:,.2f}! 🚨"
+        self.txt_status.text = f"🚨 ALVO ATINGIDO às {hora_disparo}! 🚨"
         self.txt_status.color = get_color_from_hex('#FF3333')
         self.btn_acao.text = "PARAR SIRENE"
         self.btn_acao.background_color = get_color_from_hex('#D32F2F')
         
         self.acender_e_desbloquear_tela()
+        self.vibrar_aparelho()
         self.tocar_sirene()
 
     def acender_e_desbloquear_tela(self):
@@ -182,11 +233,13 @@ class BtcAlarmApp(App):
                 from jnius import autoclass
                 MediaPlayer = autoclass('android.media.MediaPlayer')
                 AudioManager = autoclass('android.media.AudioManager')
+                
                 if self.android_player is not None:
                     try:
                         self.android_player.release()
                     except Exception:
                         pass
+                        
                 self.android_player = MediaPlayer()
                 self.android_player.setDataSource(caminho_abs)
                 self.android_player.setAudioStreamType(AudioManager.STREAM_ALARM)
@@ -237,10 +290,13 @@ class BtcAlarmApp(App):
                     
                     self.btn_acao.text = "Desativar Alarme"
                     self.btn_acao.background_color = get_color_from_hex('#C62828')
+
+                    self.adquire_wake_lock()
                 except ValueError:
                     pass
         else:
             self.parar_sirene()
+            self.solta_wake_lock()
             self.alarme_ativo = False
             self.alarme_tocando = False
             self.preco_alvo = None
@@ -250,6 +306,9 @@ class BtcAlarmApp(App):
             self.txt_status.color = get_color_from_hex('#808080')
             self.btn_acao.text = "Ativar Alarme"
             self.btn_acao.background_color = get_color_from_hex('#00A843')
+
+    def on_stop(self):
+        self.solta_wake_lock()
 
 if __name__ == '__main__':
     BtcAlarmApp().run()
