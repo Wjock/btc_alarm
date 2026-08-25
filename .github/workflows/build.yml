@@ -53,17 +53,17 @@ jobs:
         pip install --upgrade pip setuptools
         pip install "cython<3.0.0" buildozer
 
-    - name: Accept Android SDK Licenses & Setup Tools
+    - name: Build with Buildozer (Auto Accept Licenses)
       run: |
+        # Aceita licencias padrao
         mkdir -p ~/.android
         touch ~/.android/repositories.cfg
-        # Pre-aceita todas as licencas do SDK
-        yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
-        # Instala build-tools estaveis
-        $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "build-tools;33.0.2" "platforms;android-33" || true
-
-    - name: Build with Buildozer
-      run: |
+        yes | buildozer -v android debug || true
+        # Aceita licencias especificas do SDK apos o buildozer inicializar os caminhos
+        if [ -d "$HOME/.buildozer/android/platform/android-sdk/cmdline-tools/latest/bin" ]; then
+          yes | $HOME/.buildozer/android/platform/android-sdk/cmdline-tools/latest/bin/sdkmanager --licenses || true
+        fi
+        # Executa a compilacao definitiva
         buildozer -v android debug
         mv bin/*.apk bin/btc_alarm.apk
 
