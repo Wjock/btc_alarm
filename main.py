@@ -18,7 +18,10 @@ class BtcAlarmApp(App):
         self.preco_alvo = None
         self.modo_alarme = None
         self.alarme_ativo = False
+        self.alarme_tocando = False
         self.preco_atual_global = 0.0
+
+        self.android_player = None
 
         layout = BoxLayout(
             orientation='vertical',
@@ -91,64 +94,13 @@ class BtcAlarmApp(App):
         layout.add_widget(self.txt_status)
         layout.add_widget(Widget())
 
-        self.solicitar_permissao_overlay()
         self.disparar_busca_ui()
         Clock.schedule_interval(self.disparar_busca_ui, 3)
         return layout
 
-    def on_pause(self):
-        return True
-
-    def on_resume(self):
-        pass
-
     def _update_rect(self, instance, value):
         self.rect.pos = instance.pos
         self.rect.size = instance.size
-
-    def solicitar_permissao_overlay(self):
-        if platform == 'android':
-            try:
-                from jnius import autoclass
-                Settings = autoclass('android.provider.Settings')
-                PythonActivity = autoclass('org.kivy.android.PythonActivity')
-                activity = PythonActivity.mActivity
-
-                if not Settings.canDrawOverlays(activity):
-                    Intent = autoclass('android.content.Intent')
-                    Uri = autoclass('android.net.Uri')
-                    intent = Intent(
-                        Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                        Uri.parse(f"package:{activity.getPackageName()}")
-                    )
-                    activity.startActivity(intent)
-            except Exception as e:
-                print(f"Erro ao solicitar overlay: {e}")
-
-    def iniciar_servico_android(self, alvo, modo):
-        if platform == 'android':
-            try:
-                from jnius import autoclass
-                PythonActivity = autoclass('org.kivy.android.PythonActivity')
-                activity = PythonActivity.mActivity
-                
-                dados = json.dumps({"alvo": alvo, "modo": modo})
-                
-                service_class = autoclass('org.btcalarm.btcalarm.ServiceMonitoramento')
-                service_class.start(activity, dados)
-            except Exception as e:
-                print(f"Erro ao iniciar servico: {e}")
-
-    def parar_servico_android(self):
-        if platform == 'android':
-            try:
-                from jnius import autoclass
-                PythonActivity = autoclass('org.kivy.android.PythonActivity')
-                activity = PythonActivity.mActivity
-                service_class = autoclass('org.btcalarm.btcalarm.ServiceMonitoramento')
-                service_class.stop(activity)
-            except Exception as e:
-                print(f"Erro ao parar servico: {e}")
 
     def disparar_busca_ui(self, dt=None):
         threading.Thread(target=self.buscar_preco_btc, daemon=True).start()
@@ -167,13 +119,111 @@ class BtcAlarmApp(App):
         self.preco_atual_global = float(preco_obtido)
         self.txt_preco.text = f"U$ {self.preco_atual_global:,.2f}"
 
+        if self.alarme_ativo and self.preco_alvo is not None and not self.alarme_tocando:
+            alvo = float(self.preco_alvo)
+            atual = float(self.preco_atual_global)
+            
+            disparar = False
+            if self.modo_alarme == "ACIMA" and atual >= alvo:
+                disparar = True
+            elif self.modo_alarme == "ABAIXO" and atual <= alvo:
+                disparar = True
+
+            if disparar:
+                self.disparar_alarme()
+
+    def disparar_alarme(self):
+        self.alarme_tocando = True
+        self.txt_status.text = f"🚨 ALVO ATINGIDO: U$ {self.preco_atual_global:,.2f}! 🚨"
+        self.txt_status.color = get_color_from_hex('#FF3333')
+        self.btn_acao.text = "PARAR SIRENE"
+        self.btn_acao.background_color = get_color_from_hex('#D32F2F')
+        
+        self.acender_e_desbloquear_tela()
+        self.tocar_sirene()
+
+    def acender_e_desbloquear_tela(self):
+        if platform == 'android':
+            try:
+                from jnius import autoclass
+                PythonActivity = autoclass('org.kivy.android.PythonActivity')
+                WindowManager = autoclass('android.view.WindowManager$LayoutParams')
+                activity = PythonActivity.mActivity
+                flags = (
+                    WindowManager.FLAG_SHOW_WHEN_LOCKED |
+                    WindowManager.FLAG_TURN_SCREEN_ON |
+                    WindowManager.FLAG_DISMISS_KEYGUARD |
+                    WindowManager.FLAG_KEEP_SCREEN_ON
+                )
+                def apply_flags():
+                    activity.getWindow().addFlags(flags)
+                from android.runnable import run_on_ui_thread
+                run_on_ui_thread(apply_flags)()
+            except Exception as e:
+                print(f"Erro ao acender tela: {e}")
+
+    def obter_caminho_sirene(self):
+        if platform == 'android':
+            try:
+                from jnius import autoclass
+                PythonActivity = autoclass('org.kivy.android.PythonActivity')
+                activity = PythonActivity.mActivity
+                caminho_app = os.path.join(activity.getFilesDir().getAbsolutePath(), "app", "sirene.mp3")
+                if os.path.exists(caminho_app):
+                    return caminho_app
+            except Exception:
+                pass
+        return os.path.abspath("sirene.mp3")
+
+    def tocar_sirene(self):
+        caminho_abs = self.obter_caminho_sirene()
+        if platform == 'android':
+            try:
+                from jnius import autoclass
+                MediaPlayer = autoclass('android.media.MediaPlayer')
+                AudioManager = autoclass('android.media.AudioManager')
+                if self.android_player is not None:
+                    try:
+                        self.android_player.release()
+                    except Exception:
+                        pass
+                self.android_player = MediaPlayer()
+                self.android_player.setDataSource(caminho_abs)
+                self.android_player.setAudioStreamType(AudioManager.STREAM_ALARM)
+                self.android_player.setLooping(True)
+                self.android_player.prepare()
+                self.android_player.start()
+            except Exception as e:
+                self.txt_status.text = f"🚨 ALVO ATINGIDO! (Erro audio: {e})"
+        else:
+            try:
+                from kivy.core.audio import SoundLoader
+                sound = SoundLoader.load(caminho_abs)
+                if sound:
+                    sound.loop = True
+                    sound.play()
+            except Exception:
+                pass
+
+    def parar_sirene(self):
+        if platform == 'android':
+            if self.android_player is not None:
+                try:
+                    if self.android_player.isPlaying():
+                        self.android_player.stop()
+                    self.android_player.release()
+                    self.android_player = None
+                except Exception:
+                    pass
+
     def alternar_alarme(self, instance):
-        if not self.alarme_ativo:
+        if not self.alarme_ativo and not self.alarme_tocando:
             if self.input_alvo.text and self.preco_atual_global > 0:
                 try:
                     limpo = self.input_alvo.text.replace(",", ".").strip()
                     self.preco_alvo = float(limpo)
                     self.alarme_ativo = True
+                    self.alarme_tocando = False
                     
                     if self.preco_alvo > self.preco_atual_global:
                         self.modo_alarme = "ACIMA"
@@ -182,18 +232,17 @@ class BtcAlarmApp(App):
                         self.modo_alarme = "ABAIXO"
                         texto_direcao = "se CAIR para"
                         
-                    self.txt_status.text = f"Alerta ativo no escuro {texto_direcao}: U$ {self.preco_alvo:,.2f}"
+                    self.txt_status.text = f"Alerta ativo {texto_direcao}: U$ {self.preco_alvo:,.2f}"
                     self.txt_status.color = get_color_from_hex('#FFB300')
                     
                     self.btn_acao.text = "Desativar Alarme"
                     self.btn_acao.background_color = get_color_from_hex('#C62828')
-
-                    self.iniciar_servico_android(self.preco_alvo, self.modo_alarme)
                 except ValueError:
                     pass
         else:
-            self.parar_servico_android()
+            self.parar_sirene()
             self.alarme_ativo = False
+            self.alarme_tocando = False
             self.preco_alvo = None
             self.modo_alarme = None
             self.input_alvo.text = ""
