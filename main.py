@@ -91,35 +91,39 @@ class BtcAlarmApp(App):
         layout.add_widget(self.txt_status)
         layout.add_widget(Widget())
 
+        self.solicitar_permissao_overlay()
         self.disparar_busca_ui()
         Clock.schedule_interval(self.disparar_busca_ui, 3)
         return layout
 
-    def solicitar_permissao_overlay(self):
-    if platform == 'android':
-        try:
-            from jnius import autoclass
-            Settings = autoclass('android.provider.Settings')
-            PythonActivity = autoclass('org.kivy.android.PythonActivity')
-            activity = PythonActivity.mActivity
+    def on_pause(self):
+        return True
 
-            # Se ainda nao puder desenhar sobre outros apps, abre a tela do sistema
-            if not Settings.canDrawOverlays(activity):
-                Intent = autoclass('android.content.Intent')
-                Uri = autoclass('android.net.Uri')
-                intent = Intent(
-                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                    Uri.parse(f"package:{activity.getPackageName()}")
-                )
-                activity.startActivity(intent)
-        except Exception as e:
-            print(f"Erro ao solicitar overlay: {e}")
-    
-    
-    
+    def on_resume(self):
+        pass
+
     def _update_rect(self, instance, value):
         self.rect.pos = instance.pos
         self.rect.size = instance.size
+
+    def solicitar_permissao_overlay(self):
+        if platform == 'android':
+            try:
+                from jnius import autoclass
+                Settings = autoclass('android.provider.Settings')
+                PythonActivity = autoclass('org.kivy.android.PythonActivity')
+                activity = PythonActivity.mActivity
+
+                if not Settings.canDrawOverlays(activity):
+                    Intent = autoclass('android.content.Intent')
+                    Uri = autoclass('android.net.Uri')
+                    intent = Intent(
+                        Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                        Uri.parse(f"package:{activity.getPackageName()}")
+                    )
+                    activity.startActivity(intent)
+            except Exception as e:
+                print(f"Erro ao solicitar overlay: {e}")
 
     def iniciar_servico_android(self, alvo, modo):
         if platform == 'android':
@@ -128,10 +132,9 @@ class BtcAlarmApp(App):
                 PythonActivity = autoclass('org.kivy.android.PythonActivity')
                 activity = PythonActivity.mActivity
                 
-                # Monta os dados para o servico de segundo plano
                 dados = json.dumps({"alvo": alvo, "modo": modo})
                 
-                service_class = autoclass('org.btcalarm.ServiceMonitoramento')
+                service_class = autoclass('org.btcalarm.btcalarm.ServiceMonitoramento')
                 service_class.start(activity, dados)
             except Exception as e:
                 print(f"Erro ao iniciar servico: {e}")
@@ -142,7 +145,7 @@ class BtcAlarmApp(App):
                 from jnius import autoclass
                 PythonActivity = autoclass('org.kivy.android.PythonActivity')
                 activity = PythonActivity.mActivity
-                service_class = autoclass('org.btcalarm.ServiceMonitoramento')
+                service_class = autoclass('org.btcalarm.btcalarm.ServiceMonitoramento')
                 service_class.stop(activity)
             except Exception as e:
                 print(f"Erro ao parar servico: {e}")
@@ -185,7 +188,6 @@ class BtcAlarmApp(App):
                     self.btn_acao.text = "Desativar Alarme"
                     self.btn_acao.background_color = get_color_from_hex('#C62828')
 
-                    # Dispara o monitoramento nativo no escuro
                     self.iniciar_servico_android(self.preco_alvo, self.modo_alarme)
                 except ValueError:
                     pass
