@@ -17,6 +17,7 @@ android.permissions = INTERNET, WAKE_LOCK, FOREGROUND_SERVICE, REQUEST_IGNORE_BA
 android.api = 33
 android.minapi = 21
 android.ndk = 25b
+android.build_tools_version = 33.0.2
 android.archs = arm64-v8a
 
 [buildozer]
