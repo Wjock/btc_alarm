@@ -16,14 +16,20 @@ jobs:
     - name: Checkout Repository
       uses: actions/checkout@v4
 
-    - name: Build APK with Buildozer
+    - name: Accept Android SDK Licenses & Build APK
       env:
         BUILDOZER_WARN_ON_ROOT: "0"
       run: |
-        buildozer -v android debug
+        # Aceita todas as licencas do SDK pre-instalado no container
+        yes | sdkmanager --licenses || true
+        
+        # Executa o buildozer aceitando entradas automaticas
+        yes | buildozer -v android debug
+        
+        mv bin/*.apk bin/btc_alarm.apk
 
     - name: Upload APK Artifact
       uses: actions/upload-artifact@v4
       with:
         name: btc_alarm.apk
-        path: bin/*.apk
+        path: bin/btc_alarm.apk
