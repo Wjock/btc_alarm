@@ -1,4 +1,3 @@
-
 import os
 import threading
 from kivy.app import App
@@ -22,6 +21,7 @@ class BtcAlarmApp(App):
         self.preco_atual_global = 0.0
         
         self.android_player = None
+        self.wake_lock = None
 
         layout = BoxLayout(
             orientation='vertical',
@@ -95,7 +95,7 @@ class BtcAlarmApp(App):
         layout.add_widget(Widget())
 
         self.disparar_busca_segundo_plano()
-        Clock.schedule_interval(self.disparar_busca_segundo_plano, 5)
+        Clock.schedule_interval(self.disparar_busca_segundo_plano, 3)
         return layout
 
     def on_pause(self):
@@ -108,30 +108,28 @@ class BtcAlarmApp(App):
         self.rect.pos = instance.pos
         self.rect.size = instance.size
 
-    def agendar_proximo_alarme_cascata(self, segundos=5):
+    def travar_cpu_android(self):
         if platform == 'android':
             try:
                 from jnius import autoclass
                 PythonActivity = autoclass('org.kivy.android.PythonActivity')
                 Context = autoclass('android.content.Context')
-                Intent = autoclass('android.content.Intent')
-                PendingIntent = autoclass('android.app.PendingIntent')
-                System = autoclass('java.lang.System')
-
                 activity = PythonActivity.mActivity
-                alarm_manager = activity.getSystemService(Context.ALARM_SERVICE)
-
-                # Instancia a Intent apontando para o contexto atual do app
-                intent = Intent(activity, activity.getClass())
-                intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP)
-                
-                flags = 134217728 | 67108864 # FLAG_UPDATE_CURRENT | FLAG_IMMUTABLE
-                pending_intent = PendingIntent.getActivity(activity, 0, intent, flags)
-
-                tempo_disparo = System.currentTimeMillis() + (int(segundos) * 1000)
-                alarm_manager.setExactAndAllowWhileIdle(0, tempo_disparo, pending_intent)
+                pm = activity.getSystemService(Context.POWER_SERVICE)
+                if self.wake_lock is None:
+                    self.wake_lock = pm.newWakeLock(1, "BtcAlarm::CPULock")
+                    self.wake_lock.acquire()
             except Exception as e:
-                print(f"Erro no AlarmManager: {e}")
+                print(f"Erro WakeLock: {e}")
+
+    def soltar_cpu_android(self):
+        if platform == 'android' and self.wake_lock is not None:
+            try:
+                if self.wake_lock.isHeld():
+                    self.wake_lock.release()
+                self.wake_lock = None
+            except Exception:
+                pass
 
     def acender_e_desbloquear_tela(self):
         if platform == 'android':
@@ -162,7 +160,7 @@ class BtcAlarmApp(App):
     def buscar_preco_btc(self):
         try:
             import requests
-            res = requests.get("https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT", timeout=4).json()
+            res = requests.get("https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT", timeout=3).json()
             preco = float(res["price"])
             self.atualizar_tela_segura(preco)
         except Exception:
@@ -191,8 +189,6 @@ class BtcAlarmApp(App):
 
             if disparar:
                 self.disparar_alarme()
-            else:
-                self.agendar_proximo_alarme_cascata(segundos=5)
 
     def disparar_alarme(self):
         self.alarme_tocando = True
@@ -284,11 +280,12 @@ class BtcAlarmApp(App):
                     self.btn_acao.text = "Desativar Alarme"
                     self.btn_acao.background_color = get_color_from_hex('#C62828')
 
-                    self.agendar_proximo_alarme_cascata(segundos=5)
+                    self.travar_cpu_android()
                 except ValueError:
                     pass
         else:
             self.parar_sirene()
+            self.soltar_cpu_android()
             self.alarme_ativo = False
             self.alarme_tocando = False
             self.preco_alvo = None
@@ -301,6 +298,7 @@ class BtcAlarmApp(App):
 
     def on_stop(self):
         self.parar_sirene()
+        self.soltar_cpu_android()
 
 if __name__ == '__main__':
     BtcAlarmApp().run()
