@@ -33,20 +33,22 @@ fullscreen = 0
 
 #android.permissions = INTERNET, WAKE_LOCK, FOREGROUND_SERVICE, FOREGROUND_SERVICE_DATA_SYNC, REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, DISABLE_KEYGUARD, USE_FULL_SCREEN_INTENT, ACCESS_WIFI_STATE, CHANGE_WIFI_MULTICAST_STATE, SYSTEM_ALERT_WINDOW, SCHEDULE_EXACT_ALARM
 
-android.permissions = INTERNET, WAKE_LOCK, FOREGROUND_SERVICE, REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, DISABLE_KEYGUARD, USE_FULL_SCREEN_INTENT, ACCESS_WIFI_STATE, CHANGE_WIFI_MULTICAST_STATE, SCHEDULE_EXACT_ALARM, USE_EXACT_ALARM
 
+
+android.permissions = INTERNET, WAKE_LOCK, FOREGROUND_SERVICE, REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, DISABLE_KEYGUARD, USE_FULL_SCREEN_INTENT, ACCESS_WIFI_STATE, CHANGE_WIFI_MULTICAST_STATE, SCHEDULE_EXACT_ALARM, USE_EXACT_ALARM
 # (list) Services to declare
 # Declara o serviço em segundo plano monitoramento (baseado no service.py)
 services = monitoramento:service.py
 
 # (int) Target Android API
-android.api = 34
+android.api = 33
 
 # (int) Minimum API required
 android.minapi = 21
 
 # (str) Android NDK version to use
 android.ndk = 25b
+android.sdk = 33
 
 # (bool) If True, then skip building an APK containing p4a's bootstrap
 android.skip_update = False
@@ -56,6 +58,9 @@ android.accept_sdk_license = True
 
 # (list) The Android archs to build for
 android.archs = arm64-v8a
+
+# Adicionar flag para evitar crash de compilação Java no Gradle
+android.gradle_dependencies = "androidx.core:core:1.10.1"
 
 [buildozer]
 

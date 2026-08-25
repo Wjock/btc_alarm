@@ -1,6 +1,5 @@
 
 import os
-import json
 import threading
 from kivy.app import App
 from kivy.uix.boxlayout import BoxLayout
@@ -110,7 +109,6 @@ class BtcAlarmApp(App):
         self.rect.size = instance.size
 
     def agendar_proximo_alarme_cascata(self, segundos=5):
-        """Usa o AlarmManager nativo para furar a suspensão do Galaxy A31"""
         if platform == 'android':
             try:
                 from jnius import autoclass
@@ -123,19 +121,17 @@ class BtcAlarmApp(App):
                 activity = PythonActivity.mActivity
                 alarm_manager = activity.getSystemService(Context.ALARM_SERVICE)
 
-                intent = Intent(activity, PythonActivity.class)
+                # Instancia a Intent apontando para o contexto atual do app
+                intent = Intent(activity, activity.getClass())
                 intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP)
                 
-                # FLAG_UPDATE_CURRENT (134217728) ou FLAG_IMMUTABLE (67108864)
-                flags = 134217728 | 67108864
+                flags = 134217728 | 67108864 # FLAG_UPDATE_CURRENT | FLAG_IMMUTABLE
                 pending_intent = PendingIntent.getActivity(activity, 0, intent, flags)
 
-                tempo_disparo = System.currentTimeMillis() + (segundos * 1000)
-
-                # RTC_WAKEUP = 0 -> Acorda a CPU no tempo exato
+                tempo_disparo = System.currentTimeMillis() + (int(segundos) * 1000)
                 alarm_manager.setExactAndAllowWhileIdle(0, tempo_disparo, pending_intent)
             except Exception as e:
-                print(f"Erro ao agendar AlarmManager: {e}")
+                print(f"Erro no AlarmManager: {e}")
 
     def acender_e_desbloquear_tela(self):
         if platform == 'android':
@@ -158,7 +154,7 @@ class BtcAlarmApp(App):
                 from android.runnable import run_on_ui_thread
                 run_on_ui_thread(apply_flags)()
             except Exception as e:
-                print(f"Erro ao acender tela: {e}")
+                print(f"Erro tela: {e}")
 
     def disparar_busca_segundo_plano(self, dt=None):
         threading.Thread(target=self.buscar_preco_btc, daemon=True).start()
@@ -196,7 +192,6 @@ class BtcAlarmApp(App):
             if disparar:
                 self.disparar_alarme()
             else:
-                # Reagenda o próximo pulso exato no sistema
                 self.agendar_proximo_alarme_cascata(segundos=5)
 
     def disparar_alarme(self):
@@ -244,7 +239,7 @@ class BtcAlarmApp(App):
                 self.android_player.prepare()
                 self.android_player.start()
             except Exception as e:
-                print(f"Erro ao tocar sirene: {e}")
+                print(f"Erro audio: {e}")
                 self.txt_status.text = f"🚨 ALVO ATINGIDO! (Erro audio: {e})"
         else:
             try:
@@ -289,7 +284,6 @@ class BtcAlarmApp(App):
                     self.btn_acao.text = "Desativar Alarme"
                     self.btn_acao.background_color = get_color_from_hex('#C62828')
 
-                    # Agenda o primeiro pulso exato no AlarmManager
                     self.agendar_proximo_alarme_cascata(segundos=5)
                 except ValueError:
                     pass
