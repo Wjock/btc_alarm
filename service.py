@@ -3,48 +3,54 @@ import time
 import json
 from jnius import autoclass
 
-# Classes Nativas do Android
-PythonService = autoclass('org.kivy.android.PythonService')
-service = PythonService.mService
+try:
+    PythonService = autoclass('org.kivy.android.PythonService')
+    service = PythonService.mService
 
-Context = autoclass('android.content.Context')
-PowerManager = autoclass('android.os.PowerManager')
-WifiManager = autoclass('android.net.wifi.WifiManager')
-MediaPlayer = autoclass('android.media.MediaPlayer')
-AudioManager = autoclass('android.media.AudioManager')
-WindowManager = autoclass('android.view.WindowManager$LayoutParams')
-NotificationBuilder = autoclass('android.app.Notification$Builder')
-NotificationManager = autoclass('android.app.NotificationManager')
-NotificationChannel = autoclass('android.app.NotificationChannel')
+    Context = autoclass('android.content.Context')
+    PowerManager = autoclass('android.os.PowerManager')
+    WifiManager = autoclass('android.net.wifi.WifiManager')
+    MediaPlayer = autoclass('android.media.MediaPlayer')
+    AudioManager = autoclass('android.media.AudioManager')
+    WindowManager = autoclass('android.view.WindowManager$LayoutParams')
+    NotificationBuilder = autoclass('android.app.Notification$Builder')
+    NotificationManager = autoclass('android.app.NotificationManager')
+    NotificationChannel = autoclass('android.app.NotificationChannel')
 
-# Trava de CPU e Wi-Fi
-power_manager = service.getSystemService(Context.POWER_SERVICE)
-wake_lock = power_manager.newWakeLock(1, "BtcAlarm::ServiceWakeLock")
-wake_lock.acquire()
+    # Mantém CPU ativa no Samsung OneUI
+    power_manager = service.getSystemService(Context.POWER_SERVICE)
+    wake_lock = power_manager.newWakeLock(1, "BtcAlarm::ServiceWakeLock")
+    wake_lock.acquire()
 
-wifi_service = service.getSystemService(Context.WIFI_SERVICE)
-wifi_lock = wifi_service.createWifiLock(3, "BtcAlarm::ServiceWifiLock")
-wifi_lock.acquire()
+    # Mantém Placa Wi-Fi Ativa no A31
+    wifi_service = service.getSystemService(Context.WIFI_SERVICE)
+    wifi_lock = wifi_service.createWifiLock(3, "BtcAlarm::ServiceWifiLock")
+    wifi_lock.acquire()
 
-CHANNEL_ID = "btc_alarm_channel"
-notification_manager = service.getSystemService(Context.NOTIFICATION_SERVICE)
+    CHANNEL_ID = "btc_alarm_channel_v2"
+    notification_manager = service.getSystemService(Context.NOTIFICATION_SERVICE)
 
-if hasattr(NotificationChannel, 'class'):
-    channel = NotificationChannel(CHANNEL_ID, "BTC Alarm Monitor", NotificationManager.IMPORTANCE_LOW)
-    notification_manager.createNotificationChannel(channel)
+    # Prioridade MAXIMA no canal para furar o modo Não Perturbe do A31
+    if hasattr(NotificationChannel, 'class'):
+        channel = NotificationChannel(CHANNEL_ID, "BTC Alarm Monitor", NotificationManager.IMPORTANCE_HIGH)
+        channel.setLockscreenVisibility(1) # VISIBILITY_PUBLIC
+        notification_manager.createNotificationChannel(channel)
 
-def criar_notificacao(texto):
-    if hasattr(NotificationBuilder, 'class'):
-        builder = NotificationBuilder(service, CHANNEL_ID)
-    else:
-        builder = NotificationBuilder(service)
-    
-    builder.setContentTitle("BTC Alarm")
-    builder.setContentText(texto)
-    builder.setSmallIcon(service.getApplicationInfo().icon)
-    return builder.build()
+    def criar_notificacao(texto):
+        if hasattr(NotificationBuilder, 'class'):
+            builder = NotificationBuilder(service, CHANNEL_ID)
+        else:
+            builder = NotificationBuilder(service)
+        
+        builder.setContentTitle("BTC Alarm Ativo")
+        builder.setContentText(texto)
+        builder.setOngoing(True)
+        builder.setSmallIcon(service.getApplicationInfo().icon)
+        return builder.build()
 
-service.startForeground(1001, criar_notificacao("Iniciando monitoramento..."))
+    service.startForeground(1001, criar_notificacao("Iniciando monitoramento no A31..."))
+except Exception as e:
+    print(f"Erro ao configurar servico no Samsung: {e}")
 
 android_player = None
 
@@ -77,6 +83,7 @@ def tocar_sirene():
         if android_player is not None:
             android_player.release()
 
+        # Configura o áudio no canal de ALARME oficial do Android/Samsung
         android_player = MediaPlayer()
         android_player.setDataSource(caminho_abs)
         android_player.setAudioStreamType(AudioManager.STREAM_ALARM)
@@ -99,18 +106,17 @@ def parar_sirene():
 
 def buscar_preco():
     try:
-        import yfinance as yf
-        ticker = yf.Ticker("BTC-USD")
-        return float(ticker.fast_info['last_price'])
+        import requests
+        res = requests.get("https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT", timeout=4).json()
+        return float(res["price"])
     except Exception:
-        try:
-            import requests
-            res = requests.get("https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT", timeout=4).json()
-            return float(res["price"])
-        except Exception:
-            return None
+        return None
 
-caminho_config = os.path.join(service.getFilesDir().getAbsolutePath(), "app", "alarm_config.json")
+try:
+    caminho_config = os.path.join(service.getFilesDir().getAbsolutePath(), "app", "alarm_config.json")
+except Exception:
+    caminho_config = "alarm_config.json"
+
 alarme_disparado = False
 
 while True:
@@ -127,7 +133,6 @@ while True:
                 preco_atual = buscar_preco()
                 
                 if preco_atual is not None:
-                    # Atualiza o preço atual no arquivo de configuracao para a interface ler
                     config["preco_atual"] = preco_atual
                     
                     disparar = False
@@ -140,9 +145,15 @@ while True:
                         alarme_disparado = True
                         config["disparado"] = True
                         tocar_sirene()
-                        notification_manager.notify(1001, criar_notificacao(f"🚨 ALVO ATINGIDO: U$ {preco_atual:,.2f}!"))
+                        try:
+                            notification_manager.notify(1001, criar_notificacao(f"🚨 ALVO ATINGIDO: U$ {preco_atual:,.2f}!"))
+                        except Exception:
+                            pass
                     elif not disparar:
-                        notification_manager.notify(1001, criar_notificacao(f"BTC: U$ {preco_atual:,.2f} | Alvo: U$ {preco_alvo:,.2f}"))
+                        try:
+                            notification_manager.notify(1001, criar_notificacao(f"BTC: U$ {preco_atual:,.2f} | Alvo: U$ {preco_alvo:,.2f}"))
+                        except Exception:
+                            pass
 
                     with open(caminho_config, "w") as f:
                         json.dump(config, f)
@@ -154,4 +165,4 @@ while True:
     except Exception as e:
         print(f"Erro no loop do servico: {e}")
 
-    time.sleep(5)
+    time.sleep(4)
