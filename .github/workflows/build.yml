@@ -18,7 +18,7 @@ jobs:
       with:
         python-version: '3.11'
 
-    - name: Install System Dependencies (Autotools & Libtool)
+    - name: Install System Dependencies
       run: |
         sudo apt-get update
         sudo apt-get install -y \
@@ -29,7 +29,6 @@ jobs:
           sqlite3 \
           libsqlite3-dev \
           ssl-cert \
-          sqlite3 \
           libssl-dev \
           libgdbm-dev \
           libgdbm-compat-dev \
@@ -44,17 +43,18 @@ jobs:
           automake \
           libtool \
           pkg-config \
-          m4
+          m4 \
+          zip \
+          unzip
 
     - name: Install Buildozer & Cython
       run: |
-        pip install --upgrade pip
-        pip install --upgrade setuptools
-        pip install buildozer cython
+        pip install --upgrade pip setuptools
+        pip install "cython<3.0.0" buildozer
 
     - name: Build with Buildozer
       run: |
-        yes | buildozer -v android debug
+        buildozer -v android debug
         mv bin/*.apk bin/btc_alarm.apk
 
     - name: Upload APK Artifact
