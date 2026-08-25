@@ -27,23 +27,50 @@ jobs:
     - name: Install System Dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y build-essential git ffmpeg libffi-dev libssl-dev autoconf automake libtool pkg-config m4 zip unzip
+        sudo apt-get install -y \
+          build-essential \
+          git \
+          ffmpeg \
+          libkrb5-dev \
+          sqlite3 \
+          libsqlite3-dev \
+          ssl-cert \
+          libssl-dev \
+          libgdbm-dev \
+          libgdbm-compat-dev \
+          liblzma-dev \
+          libreadline-dev \
+          libffi-dev \
+          libbz2-dev \
+          libncurses5-dev \
+          libncursesw5-dev \
+          zlib1g-dev \
+          autoconf \
+          automake \
+          libtool \
+          pkg-config \
+          m4 \
+          zip \
+          unzip
 
     - name: Install Buildozer & Cython
       run: |
         pip install --upgrade pip setuptools
         pip install "cython<3.0.0" buildozer
 
-    - name: Pre-accept Android SDK Licenses
+    - name: Prepare SDK Licenses
       run: |
+        # Aceita licencas do SDK do sistema
         yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
+        
+        # Pre-cria as pastas do Buildozer e injeta as licencas aprovadas antes dele rodar
+        mkdir -p ~/.buildozer/android/platform/android-sdk/licenses
+        cp -r $ANDROID_HOME/licenses/* ~/.buildozer/android/platform/android-sdk/licenses/ || true
 
     - name: Build with Buildozer
-      env:
-        # Forca o Buildozer a usar o Android SDK ja instalado no GitHub
-        ANDROIDSDK: ${{ env.ANDROID_HOME }}
       run: |
-        buildozer -v android debug
+        # Executa o buildozer forçando o aceite de qualquer pacote extra que o p4a tente baixar
+        yes | buildozer -v android debug
         mv bin/*.apk bin/btc_alarm.apk
 
     - name: Upload APK Artifact
