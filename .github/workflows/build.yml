@@ -27,45 +27,21 @@ jobs:
     - name: Install System Dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y \
-          build-essential \
-          git \
-          ffmpeg \
-          libkrb5-dev \
-          sqlite3 \
-          libsqlite3-dev \
-          ssl-cert \
-          libssl-dev \
-          libgdbm-dev \
-          libgdbm-compat-dev \
-          liblzma-dev \
-          libreadline-dev \
-          libffi-dev \
-          libbz2-dev \
-          libncurses5-dev \
-          libncursesw5-dev \
-          zlib1g-dev \
-          autoconf \
-          automake \
-          libtool \
-          pkg-config \
-          m4 \
-          zip \
-          unzip
+        sudo apt-get install -y build-essential git ffmpeg libffi-dev libssl-dev autoconf automake libtool pkg-config m4 zip unzip
 
     - name: Install Buildozer & Cython
       run: |
         pip install --upgrade pip setuptools
         pip install "cython<3.0.0" buildozer
 
-    - name: Accept Android Licenses
+    - name: Pre-accept Android SDK Licenses
       run: |
-        mkdir -p ~/.android
-        touch ~/.android/repositories.cfg
-        # Aceita as licencas no SDK pre-instalado da maquina virtual
         yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
 
     - name: Build with Buildozer
+      env:
+        # Forca o Buildozer a usar o Android SDK ja instalado no GitHub
+        ANDROIDSDK: ${{ env.ANDROID_HOME }}
       run: |
         buildozer -v android debug
         mv bin/*.apk bin/btc_alarm.apk
