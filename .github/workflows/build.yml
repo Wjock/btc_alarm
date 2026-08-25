@@ -1,4 +1,4 @@
-name: Build Kivy APK
+name: Build Android APK
 
 on:
   push:
@@ -10,31 +10,55 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4.2.2
-
-    - name: Set up Java JDK
-      uses: actions/setup-java@v5
-      with:
-        distribution: 'temurin'
-        java-version: '17'
+    - name: Checkout Repository
+      uses: actions/checkout@v4
 
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
         python-version: '3.11'
 
-    - name: Install dependencies
+    - name: Install System Dependencies (Autotools & Libtool)
       run: |
-        python -m pip install --upgrade pip
+        sudo apt-get update
+        sudo apt-get install -y \
+          build-essential \
+          git \
+          ffmpeg \
+          libkrb5-dev \
+          sqlite3 \
+          libsqlite3-dev \
+          ssl-cert \
+          sqlite3 \
+          libssl-dev \
+          libgdbm-dev \
+          libgdbm-compat-dev \
+          liblzma-dev \
+          libreadline-dev \
+          libffi-dev \
+          libbz2-dev \
+          libncurses5-dev \
+          libncursesw5-dev \
+          zlib1g-dev \
+          autoconf \
+          automake \
+          libtool \
+          pkg-config \
+          m4
+
+    - name: Install Buildozer & Cython
+      run: |
+        pip install --upgrade pip
+        pip install --upgrade setuptools
         pip install buildozer cython
 
     - name: Build with Buildozer
       run: |
         yes | buildozer -v android debug
+        mv bin/*.apk bin/btc_alarm.apk
 
     - name: Upload APK Artifact
       uses: actions/upload-artifact@v4
       with:
         name: btc_alarm.apk
-        path: bin/*.apk
+        path: bin/btc_alarm.apk
