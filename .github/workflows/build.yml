@@ -13,6 +13,12 @@ jobs:
     - name: Checkout Repository
       uses: actions/checkout@v4
 
+    - name: Set up Java 17
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'temurin'
+        java-version: '17'
+
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
@@ -45,25 +51,15 @@ jobs:
           pkg-config \
           m4 \
           zip \
-          unzip \
-          openjdk-17-jdk
+          unzip
 
     - name: Install Buildozer & Cython
       run: |
         pip install --upgrade pip setuptools
         pip install "cython<3.0.0" buildozer
 
-    - name: Build with Buildozer (Auto Accept Licenses)
+    - name: Build with Buildozer
       run: |
-        # Aceita licencias padrao
-        mkdir -p ~/.android
-        touch ~/.android/repositories.cfg
-        yes | buildozer -v android debug || true
-        # Aceita licencias especificas do SDK apos o buildozer inicializar os caminhos
-        if [ -d "$HOME/.buildozer/android/platform/android-sdk/cmdline-tools/latest/bin" ]; then
-          yes | $HOME/.buildozer/android/platform/android-sdk/cmdline-tools/latest/bin/sdkmanager --licenses || true
-        fi
-        # Executa a compilacao definitiva
         buildozer -v android debug
         mv bin/*.apk bin/btc_alarm.apk
 
